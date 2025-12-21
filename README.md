@@ -42,20 +42,21 @@ docker run -d -p 5000:5000 --name meralco-api ghcr.io/rairulyle/meralco-api:main
 Add to `configuration.yaml`:
 
 ```yaml
-sensor:
-  - platform: rest
-    name: MERALCO Rate
-    resource: http://localhost:5000/rates
-    value_template: "{{ value_json.data.rate_kwh }}"
-    unit_of_measurement: "PHP/kWh"
+rest:
+  - resource: http://localhost:5000/rates
     scan_interval: 86400 # Once per day
-    json_attributes_path: "$.data"
-    json_attributes:
-      - rate_kwh
-      - rate_change
-      - rate_change_percent
-      - rate_unit
-      - trend
+    sensor:
+      - name: "MERALCO Rate"
+        unit_of_measurement: "PHP/kWh"
+        value_template: "{{ value_json.data.rate_kwh }}"
+      - name: "MERALCO Rate Change"
+        unit_of_measurement: "PHP/kWh"
+        value_template: "{{ value_json.data.rate_change }}"
+      - name: "MERALCO Rate Change Percent"
+        unit_of_measurement: "%"
+        value_template: "{{ value_json.data.rate_change_percent }}"
+      - name: "MERALCO Rate Trend"
+        value_template: "{{ value_json.data.trend }}"
 ```
 
 ## Output Format
