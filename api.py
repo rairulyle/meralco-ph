@@ -60,14 +60,25 @@ def rates():
     logger.info("Cache expired or empty, fetching fresh data...")
     now = datetime.now()
     data = get_meralco_rates()
-    _cache["data"] = data
-    _cache["month"] = (now.year, now.month)
 
     if data.get("success"):
+        # Success - update cache with new data
+        _cache["data"] = data
+        _cache["month"] = (now.year, now.month)
         logger.info("Successfully fetched rate: %s PHP/kWh", data["data"].get("rate_kwh"))
-    else:
-        logger.warning("Failed to fetch rates: %s", data.get("error"))
+        return jsonify(data)
 
+    # Fetch failed - return stale cache if available
+    logger.warning("Failed to fetch rates: %s", data.get("error"))
+
+    if _cache["data"] and _cache["data"].get("success"):
+        # Return previous data with error message
+        stale_data = _cache["data"].copy()
+        stale_data["error"] = f"{data.get('error')}. Using previous month's values instead."
+        logger.info("Returning stale cached data from %s-%s", _cache["month"][0], _cache["month"][1])
+        return jsonify(stale_data)
+
+    # No cache available, return error
     return jsonify(data)
 
 
