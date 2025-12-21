@@ -1,7 +1,8 @@
 """
 MERALCO API - Scraper Module
 
-Scrapes the current electricity rate from MERALCO's news and advisories page.
+Scrapes the current electricity rate from MERALCO (Manila Electric Company)
+Philippines news and advisories page.
 """
 
 import re

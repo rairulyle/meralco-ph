@@ -1,0 +1,9 @@
+services:
+  meralco-api:
+    build: .
+    container_name: meralco-api
+    ports:
+      - "5000:5000"
+    restart: unless-stopped
+    environment:
+      - PYTHONUNBUFFERED=1

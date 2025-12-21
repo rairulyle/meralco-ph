@@ -1,6 +1,8 @@
 """
-MERALCO API
-Provides a REST endpoint of the current MERALCO electricity rates.
+MERALCO API - Philippines Electricity Rate API
+
+Provides a REST endpoint for current MERALCO (Manila Electric Company)
+electricity rates in the Philippines.
 """
 
 from flask import Flask, jsonify

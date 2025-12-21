@@ -1,6 +1,8 @@
 # MERALCO API
 
-Provides a REST endpoint of the current MERALCO electricity rates.
+A REST API that scrapes and provides current MERALCO (Manila Electric Company) electricity rates in the Philippines.
+
+MERALCO is the largest electric distribution utility company in the Philippines, serving Metro Manila and nearby provinces. This API fetches the latest electricity rates from MERALCO's official announcements.
 
 ## Setup
 
@@ -48,7 +50,13 @@ Endpoints:
 docker compose up -d
 ```
 
-### Using Docker directly
+### Using pre-built image from GHCR
+
+```bash
+docker run -d -p 5000:5000 ghcr.io/rairulyle/meralco-api:main
+```
+
+### Building locally
 
 ```bash
 docker build -t meralco-api .
@@ -104,3 +112,5 @@ sensor:
 | `rate_change_percent` | Percentage change from previous month            |
 | `rate_unit`           | Unit of measurement                              |
 | `trend`               | Rate direction: `up` or `down`                   |
+
+**Keywords:** MERALCO rates, Philippines electricity rates, Philippine power rates, Manila Electric Company, MERALCO kWh rate, Philippine electricity price, Home Assistant MERALCO integration, MERALCO API, MERALCO Docker
