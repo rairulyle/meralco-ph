@@ -7,8 +7,19 @@ Philippines news and advisories page.
 
 import re
 from datetime import datetime
+
+import requests
 from playwright.sync_api import sync_playwright
 from bs4 import BeautifulSoup
+
+
+def is_url_reachable(url: str) -> bool:
+    """Check if URL exists using a lightweight HEAD request."""
+    try:
+        response = requests.head(url, timeout=10, allow_redirects=True)
+        return response.status_code == 200
+    except requests.RequestException:
+        return False
 
 
 def get_current_month_url() -> tuple[str, str]:
@@ -105,7 +116,15 @@ def get_meralco_rates() -> dict:
 
     # Try lower rates first (more common to have decreases)
     for url, trend in [(lower_url, "down"), (higher_url, "up")]:
-        print(f"Trying: {url}")
+        print(f"Checking: {url}")
+
+        # First, check if URL exists with lightweight HEAD request
+        if not is_url_reachable(url):
+            print(f"  URL not reachable, skipping")
+            continue
+
+        # URL exists, now fetch with Playwright for JS-rendered content
+        print(f"  URL reachable, fetching content...")
         content = fetch_page_content(url)
 
         if content and "Page not found" not in content:
