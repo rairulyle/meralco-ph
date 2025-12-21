@@ -1,8 +1,7 @@
 """
-MERALCO Electricity Rate Scraper
+MERALCO API - Scraper Module
 
 Scrapes the current electricity rate from MERALCO's news and advisories page.
-Designed for integration with Home Assistant.
 """
 
 import re
@@ -47,13 +46,10 @@ def parse_rates(html_content: str) -> dict:
     soup = BeautifulSoup(html_content, "html.parser")
 
     rates = {
-        "overall_rate": None,
-        "generation_charge": None,
-        "transmission_charge": None,
-        "distribution_charge": None,
-        "others": None,
+        "rate_kwh": None,
         "rate_change": None,
-        "effective_date": None,
+        "rate_change_percent": None,
+        "rate_unit": "PHP/kWh",
         "raw_text": None,
     }
 
@@ -71,10 +67,10 @@ def parse_rates(html_content: str) -> dict:
         overall_pattern = r'overall\s+rate\s+for\s+a\s+typical\s+household\s+to\s+[P₱]\s*(\d+\.?\d*)\s*per\s*kWh'
         overall_match = re.search(overall_pattern, text_content, re.IGNORECASE)
         if overall_match:
-            rates["overall_rate"] = float(overall_match.group(1))
+            rates["rate_kwh"] = float(overall_match.group(1))
 
         # Rate change: "reduction of P0.3557 per kWh" or "increase of P0.1234 per kWh"
-        change_pattern = r'(increase|decrease|reduction)\s+(?:of\s+)?[P₱]\s*(\d+\.?\d*)\s*per\s*kWh'
+        change_pattern = r'(increase|decrease|reduction|upward\s+adjustment)\s+(?:of\s+)?[P₱]\s*(\d+\.?\d*)\s*per\s*kWh'
         change_match = re.search(change_pattern, text_content, re.IGNORECASE)
         if change_match:
             direction = change_match.group(1).lower()
@@ -83,17 +79,10 @@ def parse_rates(html_content: str) -> dict:
                 amount = -amount
             rates["rate_change"] = amount
 
-        # Generation charge
-        gen_pattern = r'generation\s+charge[:\s]+[P₱]\s*(\d+\.?\d*)'
-        gen_match = re.search(gen_pattern, text_content, re.IGNORECASE)
-        if gen_match:
-            rates["generation_charge"] = float(gen_match.group(1))
-
-        # Transmission charge
-        trans_pattern = r'transmission\s+charge[:\s]+[P₱]\s*(\d+\.?\d*)'
-        trans_match = re.search(trans_pattern, text_content, re.IGNORECASE)
-        if trans_match:
-            rates["transmission_charge"] = float(trans_match.group(1))
+            # Calculate percentage change if we have both values
+            if rates["rate_kwh"] and rates["rate_change"]:
+                previous_rate = rates["rate_kwh"] - rates["rate_change"]
+                rates["rate_change_percent"] = round((rates["rate_change"] / previous_rate) * 100, 2)
 
     return rates
 
@@ -108,24 +97,23 @@ def get_meralco_rates() -> dict:
     result = {
         "success": False,
         "url": None,
-        "rate_direction": None,
-        "rates": {},
+        "data": {},
         "error": None,
         "timestamp": datetime.now().isoformat(),
     }
 
     # Try lower rates first (more common to have decreases)
-    for url, direction in [(lower_url, "lower"), (higher_url, "higher")]:
+    for url, trend in [(lower_url, "down"), (higher_url, "up")]:
         print(f"Trying: {url}")
         content = fetch_page_content(url)
 
         if content and "Page not found" not in content:
-            rates = parse_rates(content)
-            if rates.get("overall_rate") or rates.get("raw_text"):
+            data = parse_rates(content)
+            if data.get("rate_kwh") or data.get("raw_text"):
+                data["trend"] = trend
                 result["success"] = True
                 result["url"] = url
-                result["rate_direction"] = direction
-                result["rates"] = rates
+                result["data"] = data
                 return result
 
     result["error"] = "Could not find rate information for current month"

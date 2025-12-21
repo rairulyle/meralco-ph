@@ -1,19 +1,22 @@
-# MERALCO Electricity Rate Scraper
+# MERALCO API
 
-Scrapes current electricity rates from MERALCO's official website for Home Assistant integration.
+Provides a REST endpoint of the current MERALCO electricity rates.
 
 ## Setup
 
+### Using pipenv
+
 ```bash
-# Create virtual environment
-python -m venv venv
-source venv/bin/activate  # Linux/Mac
-# or: venv\Scripts\activate  # Windows
+pipenv install
+pipenv run playwright install chromium
+```
 
-# Install dependencies
+### Using venv
+
+```bash
+python3 -m venv venv
+source venv/bin/activate
 pip install -r requirements.txt
-
-# Install Playwright browsers
 playwright install chromium
 ```
 
@@ -22,23 +25,39 @@ playwright install chromium
 ### Direct Script
 
 ```bash
-python scraper.py
+pipenv run python scraper.py
 ```
 
 ### REST API
 
 ```bash
-python api.py
+pipenv run python api.py
 # API runs on http://localhost:5000
 ```
 
 Endpoints:
+
 - `GET /rates` - Returns current electricity rates
 - `GET /health` - Health check
 
+## Docker
+
+### Using Docker Compose (Recommended)
+
+```bash
+docker compose up -d
+```
+
+### Using Docker directly
+
+```bash
+docker build -t meralco-api .
+docker run -d -p 5000:5000 meralco-api
+```
+
 ## Home Assistant Integration
 
-### Option 1: REST Sensor
+### REST Sensor
 
 Add to `configuration.yaml`:
 
@@ -47,42 +66,16 @@ sensor:
   - platform: rest
     name: MERALCO Rate
     resource: http://localhost:5000/rates
-    value_template: "{{ value_json.rates.overall_rate }}"
+    value_template: "{{ value_json.data.rate_kwh }}"
     unit_of_measurement: "PHP/kWh"
-    scan_interval: 86400  # Once per day
+    scan_interval: 86400 # Once per day
+    json_attributes_path: "$.data"
     json_attributes:
-      - rate_direction
-      - rates
-      - url
-      - timestamp
-```
-
-### Option 2: Command Line Sensor
-
-```yaml
-sensor:
-  - platform: command_line
-    name: MERALCO Rate
-    command: "cd /path/to/meralco-scraper && python scraper.py"
-    value_template: "{{ value_json.rates.overall_rate }}"
-    unit_of_measurement: "PHP/kWh"
-    scan_interval: 86400
-    json_attributes:
-      - rate_direction
-      - rates
-```
-
-## Docker Deployment
-
-```dockerfile
-FROM python:3.11-slim
-
-WORKDIR /app
-COPY requirements.txt .
-RUN pip install -r requirements.txt && playwright install chromium && playwright install-deps
-
-COPY . .
-CMD ["python", "api.py"]
+      - rate_kwh
+      - rate_change
+      - rate_change_percent
+      - rate_unit
+      - trend
 ```
 
 ## Output Format
@@ -91,14 +84,23 @@ CMD ["python", "api.py"]
 {
   "success": true,
   "url": "https://company.meralco.com.ph/news-and-advisories/lower-rates-december-2025",
-  "rate_direction": "lower",
-  "rates": {
-    "overall_rate": 11.7665,
-    "generation_charge": 6.1234,
-    "transmission_charge": 1.2345,
-    "distribution_charge": null,
-    "rate_change": -0.1234
+  "data": {
+    "rate_kwh": 13.1145,
+    "rate_change": -0.3557,
+    "rate_change_percent": -2.64,
+    "rate_unit": "PHP/kWh",
+    "trend": "down",
+    "raw_text": "..."
   },
+  "error": null,
   "timestamp": "2025-12-21T12:00:00"
 }
 ```
+
+| Field                 | Description                                      |
+| --------------------- | ------------------------------------------------ |
+| `rate_kwh`            | Current electricity rate per kWh                 |
+| `rate_change`         | Change from previous month (negative = decrease) |
+| `rate_change_percent` | Percentage change from previous month            |
+| `rate_unit`           | Unit of measurement                              |
+| `trend`               | Rate direction: `up` or `down`                   |

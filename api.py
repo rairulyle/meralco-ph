@@ -1,6 +1,6 @@
 """
-Simple Flask API for MERALCO rate scraper.
-Provides a REST endpoint for Home Assistant integration.
+MERALCO API
+Provides a REST endpoint of the current MERALCO electricity rates.
 """
 
 from flask import Flask, jsonify
@@ -16,7 +16,7 @@ CACHE_DURATION_SECONDS = 3600  # 1 hour
 @app.route("/")
 def index():
     return jsonify({
-        "service": "MERALCO Rate Scraper",
+        "service": "MERALCO API",
         "endpoints": {
             "/rates": "Get current electricity rates",
             "/health": "Health check",
