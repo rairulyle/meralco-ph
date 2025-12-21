@@ -1,6 +1,6 @@
 # MERALCO API
 
-A REST API that scrapes and provides current MERALCO (Manila Electric Company) electricity rates in the Philippines.
+Konnichiwassup! This is a REST API that scrapes and provides current MERALCO (Manila Electric Company) electricity rates in the Philippines.
 
 MERALCO is the largest electric distribution utility company in the Philippines, serving Metro Manila and nearby provinces. This API fetches the latest electricity rates from MERALCO's official announcements.
 
