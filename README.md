@@ -11,7 +11,7 @@ Create a `docker-compose.yml` file:
 ```yaml
 services:
   meralco-ph:
-    image: ghcr.io/rairulyle/meralco-ph:main
+    image: ghcr.io/rairulyle/meralco-ph:latest
     container_name: meralco-ph
     ports:
       - "5000:5000"
@@ -31,7 +31,7 @@ The API will be available at `http://localhost:5000/rates`
 ### Alternative: Using Docker run
 
 ```bash
-docker run -d -p 5000:5000 --name meralco-ph ghcr.io/rairulyle/meralco-ph:main
+docker run -d -p 5000:5000 --name meralco-ph ghcr.io/rairulyle/meralco-ph:latest
 ```
 
 ## API Endpoints
