@@ -1,10 +1,19 @@
-# MERALCO API
+# ⚡ MERALCO PH - API
 
 Konnichiwassup! This is a REST API that scrapes and provides current MERALCO (Manila Electric Company) electricity rates in the Philippines.
 
-MERALCO is the largest electric distribution utility company in the Philippines, serving Metro Manila and nearby provinces.
+MERALCO is the largest electric distribution utility company in the Philippines, serving Metro Manila and nearby provinces. This API automatically fetches the latest monthly electricity rates from MERALCO's official news and advisories, making it easy to integrate real-time rate data into your Home Assistant setup or any other automation platform.
 
-## Quick Start (Recommended)
+**✨ Features:**
+
+- Automatically detects monthly rate changes (higher/lower rates)
+- Caches data to minimize requests (refreshes monthly)
+- Returns previous month's rates if current month is unavailable
+- Lightweight REST API with health check endpoint
+- Docker-ready for easy deployment
+- Home Assistant Add-on (Coming soon)
+
+## 🚀 Quick Start (Recommended)
 
 Create a `docker-compose.yml` file:
 
@@ -34,12 +43,12 @@ The API will be available at `http://localhost:5000/rates`
 docker run -d -p 5000:5000 --name meralco-ph ghcr.io/rairulyle/meralco-ph:latest
 ```
 
-## API Endpoints
+## 📡 API Endpoints
 
 - `GET /rates` - Returns current electricity rates
 - `GET /health` - Health check
 
-## Home Assistant Integration
+## 🏠 Home Assistant Integration
 
 Add to `configuration.yaml`:
 
@@ -48,20 +57,20 @@ rest:
   - resource: http://localhost:5000/rates
     scan_interval: 86400 # Once per day
     sensor:
-      - name: "MERALCO Rate"
+      - name: "MERALCO - Rate"
         unit_of_measurement: "PHP/kWh"
         value_template: "{{ value_json.data.rate_kwh }}"
-      - name: "MERALCO Rate Change"
+      - name: "MERALCO - Rate Change"
         unit_of_measurement: "PHP/kWh"
         value_template: "{{ value_json.data.rate_change }}"
-      - name: "MERALCO Rate Change Percent"
+      - name: "MERALCO - Rate Change Percent"
         unit_of_measurement: "%"
         value_template: "{{ value_json.data.rate_change_percent }}"
-      - name: "MERALCO Rate Trend"
+      - name: "MERALCO - Trend"
         value_template: "{{ value_json.data.trend }}"
 ```
 
-## Output Format
+## 📋 Output Format
 
 ```json
 {
@@ -80,17 +89,17 @@ rest:
 }
 ```
 
-| Field                 | Description                                      |
-| --------------------- | ------------------------------------------------ |
-| `rate_kwh`            | Current electricity rate per kWh                 |
-| `rate_change`         | Change from previous month (negative = decrease) |
-| `rate_change_percent` | Percentage change from previous month            |
-| `rate_unit`           | Unit of measurement                              |
-| `trend`               | Rate direction: `up` or `down`                   |
+| Field                 | Description                                      | Example   |
+| --------------------- | ------------------------------------------------ | --------- |
+| `rate_kwh`            | Current electricity rate per kWh                 | `13.1145` |
+| `rate_change`         | Change from previous month (negative = decrease) | `-0.3557` |
+| `rate_change_percent` | Percentage change from previous month            | `-2.64`   |
+| `rate_unit`           | Unit of measurement                              | `PHP/kWh` |
+| `trend`               | Rate direction: `up` or `down`                   | `down`    |
 
 ---
 
-## Manual Installation
+## 🔧 Manual Installation
 
 If you prefer to build from source, clone the repository first:
 
@@ -132,11 +141,11 @@ python api.py
 
 ---
 
-## Disclaimer
+## ⚠️ Disclaimer
 
 This project scrapes publicly available electricity rate announcements from MERALCO's official website for personal/home automation use. It is not affiliated with or endorsed by MERALCO. The API fetches data infrequently (once per month) to minimize server impact. Use responsibly.
 
-## License
+## 📄 License
 
 MIT License - see [LICENSE](LICENSE) for details.
 
