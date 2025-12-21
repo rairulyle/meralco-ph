@@ -16,6 +16,8 @@ services:
     ports:
       - "5000:5000"
     restart: unless-stopped
+    environment:
+      - TZ=Asia/Manila
 ```
 
 Then run:

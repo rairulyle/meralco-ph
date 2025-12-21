@@ -5,14 +5,22 @@ Provides a REST endpoint for current MERALCO (Manila Electric Company)
 electricity rates in the Philippines.
 """
 
+from datetime import datetime
 from flask import Flask, jsonify
 from scraper import get_meralco_rates
 
 app = Flask(__name__)
 
 # Cache to avoid hammering the website
-_cache = {"data": None, "timestamp": None}
-CACHE_DURATION_SECONDS = 3600  # 1 hour
+_cache = {"data": None, "month": None}
+
+
+def is_cache_valid() -> bool:
+    """Check if cache is valid (same month as current date)."""
+    if not _cache["data"] or not _cache["month"]:
+        return False
+    now = datetime.now()
+    return _cache["month"] == (now.year, now.month)
 
 
 @app.route("/")
@@ -33,18 +41,15 @@ def health():
 
 @app.route("/rates")
 def rates():
-    from datetime import datetime, timedelta
-
-    # Check cache
-    if _cache["data"] and _cache["timestamp"]:
-        cache_age = datetime.now() - _cache["timestamp"]
-        if cache_age < timedelta(seconds=CACHE_DURATION_SECONDS):
-            return jsonify(_cache["data"])
+    # Check cache - expires on first day of next month
+    if is_cache_valid():
+        return jsonify(_cache["data"])
 
     # Fetch fresh data
+    now = datetime.now()
     data = get_meralco_rates()
     _cache["data"] = data
-    _cache["timestamp"] = datetime.now()
+    _cache["month"] = (now.year, now.month)
 
     return jsonify(data)
 
