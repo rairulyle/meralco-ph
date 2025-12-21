@@ -1,7 +1,7 @@
 services:
-  meralco-api:
+  meralco-ph:
     build: .
-    container_name: meralco-api
+    container_name: meralco-ph
     ports:
       - "5000:5000"
     restart: unless-stopped

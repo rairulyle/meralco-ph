@@ -10,9 +10,9 @@ Create a `docker-compose.yml` file:
 
 ```yaml
 services:
-  meralco-api:
-    image: ghcr.io/rairulyle/meralco-api:main
-    container_name: meralco-api
+  meralco-ph:
+    image: ghcr.io/rairulyle/meralco-ph:main
+    container_name: meralco-ph
     ports:
       - "5000:5000"
     restart: unless-stopped
@@ -31,7 +31,7 @@ The API will be available at `http://localhost:5000/rates`
 ### Alternative: Using Docker run
 
 ```bash
-docker run -d -p 5000:5000 --name meralco-api ghcr.io/rairulyle/meralco-api:main
+docker run -d -p 5000:5000 --name meralco-ph ghcr.io/rairulyle/meralco-ph:main
 ```
 
 ## API Endpoints
@@ -95,8 +95,8 @@ rest:
 If you prefer to build from source, clone the repository first:
 
 ```bash
-git clone https://github.com/rairulyle/meralco-api.git
-cd meralco-api
+git clone https://github.com/rairulyle/meralco-ph.git
+cd meralco-ph
 ```
 
 ### Using Docker Compose
@@ -108,8 +108,8 @@ docker compose up -d
 ### Building Docker image locally
 
 ```bash
-docker build -t meralco-api .
-docker run -d -p 5000:5000 meralco-api
+docker build -t meralco-ph .
+docker run -d -p 5000:5000 meralco-ph
 ```
 
 ### Using pipenv
@@ -129,6 +129,16 @@ pip install -r requirements.txt
 playwright install chromium
 python api.py
 ```
+
+---
+
+## Disclaimer
+
+This project scrapes publicly available electricity rate announcements from MERALCO's official website for personal/home automation use. It is not affiliated with or endorsed by MERALCO. The API fetches data infrequently (once per month) to minimize server impact. Use responsibly.
+
+## License
+
+MIT License - see [LICENSE](LICENSE) for details.
 
 ---
 
