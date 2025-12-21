@@ -5,12 +5,15 @@ Scrapes the current electricity rate from MERALCO (Manila Electric Company)
 Philippines news and advisories page.
 """
 
+import logging
 import re
 from datetime import datetime
 
 import requests
 from playwright.sync_api import sync_playwright
 from bs4 import BeautifulSoup
+
+logger = logging.getLogger(__name__)
 
 
 def is_url_reachable(url: str) -> bool:
@@ -49,7 +52,7 @@ def fetch_page_content(url: str) -> str | None:
             browser.close()
             return content
     except Exception as e:
-        print(f"Error fetching {url}: {e}")
+        logger.error("Error fetching %s: %s", url, e)
         return None
 
 
@@ -116,15 +119,15 @@ def get_meralco_rates() -> dict:
 
     # Try lower rates first (more common to have decreases)
     for url, trend in [(lower_url, "down"), (higher_url, "up")]:
-        print(f"Checking: {url}")
+        logger.info("Checking URL: %s", url)
 
         # First, check if URL exists with lightweight HEAD request
         if not is_url_reachable(url):
-            print(f"  URL not reachable, skipping")
+            logger.info("URL not reachable, skipping")
             continue
 
         # URL exists, now fetch with Playwright for JS-rendered content
-        print(f"  URL reachable, fetching content...")
+        logger.info("URL reachable, fetching content with Playwright...")
         content = fetch_page_content(url)
 
         if content and "Page not found" not in content:
@@ -143,6 +146,11 @@ def get_meralco_rates() -> dict:
 if __name__ == "__main__":
     import json
 
-    print("Fetching MERALCO electricity rates...")
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s - %(levelname)s - %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
+    logger.info("Fetching MERALCO electricity rates...")
     rates = get_meralco_rates()
     print(json.dumps(rates, indent=2, default=str))

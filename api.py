@@ -5,9 +5,19 @@ Provides a REST endpoint for current MERALCO (Manila Electric Company)
 electricity rates in the Philippines.
 """
 
+import logging
 from datetime import datetime
+
 from flask import Flask, jsonify
 from scraper import get_meralco_rates
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
+logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
@@ -43,13 +53,20 @@ def health():
 def rates():
     # Check cache - expires on first day of next month
     if is_cache_valid():
+        logger.info("Returning cached data for %s-%s", _cache["month"][0], _cache["month"][1])
         return jsonify(_cache["data"])
 
     # Fetch fresh data
+    logger.info("Cache expired or empty, fetching fresh data...")
     now = datetime.now()
     data = get_meralco_rates()
     _cache["data"] = data
     _cache["month"] = (now.year, now.month)
+
+    if data.get("success"):
+        logger.info("Successfully fetched rate: %s PHP/kWh", data["data"].get("rate_kwh"))
+    else:
+        logger.warning("Failed to fetch rates: %s", data.get("error"))
 
     return jsonify(data)
 
