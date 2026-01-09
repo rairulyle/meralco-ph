@@ -5,7 +5,7 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from api import app, _cache, clean_response, is_cache_valid
+from src.api import app, _cache, clean_response, is_cache_valid
 
 
 @pytest.fixture
@@ -97,7 +97,7 @@ def test_is_cache_valid_expired_month():
     assert not is_cache_valid()
 
 
-@patch("api.get_meralco_rates")
+@patch("src.api.get_meralco_rates")
 def test_rates_current_month_success(mock_get_rates, client):
     """Test /rates endpoint with current month data."""
     mock_get_rates.return_value = {
@@ -118,7 +118,7 @@ def test_rates_current_month_success(mock_get_rates, client):
     assert data["data"]["rate_kwh"] == 13.1145
 
 
-@patch("api.get_meralco_rates")
+@patch("src.api.get_meralco_rates")
 def test_rates_previous_month_no_cache(mock_get_rates, client):
     """Test /rates endpoint with previous month data (no caching)."""
     mock_get_rates.return_value = {
@@ -143,7 +143,7 @@ def test_rates_previous_month_no_cache(mock_get_rates, client):
     assert mock_get_rates.call_count == 2  # Called twice, not cached
 
 
-@patch("api.get_meralco_rates")
+@patch("src.api.get_meralco_rates")
 def test_rates_current_month_uses_cache(mock_get_rates, client):
     """Test /rates endpoint caches current month data."""
     mock_get_rates.return_value = {
@@ -165,7 +165,7 @@ def test_rates_current_month_uses_cache(mock_get_rates, client):
     assert mock_get_rates.call_count == 1  # Only called once
 
 
-@patch("api.get_meralco_rates")
+@patch("src.api.get_meralco_rates")
 def test_rates_both_months_fail_with_stale_cache(mock_get_rates, client):
     """Test /rates endpoint when both months fail but stale cache exists."""
     # First, populate cache with successful data
@@ -195,7 +195,7 @@ def test_rates_both_months_fail_with_stale_cache(mock_get_rates, client):
     assert "temporarily unavailable" in data["warning"]
 
 
-@patch("api.get_meralco_rates")
+@patch("src.api.get_meralco_rates")
 def test_rates_complete_failure_no_cache(mock_get_rates, client):
     """Test /rates endpoint when both months fail and no cache exists."""
     mock_get_rates.return_value = {

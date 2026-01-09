@@ -191,7 +191,8 @@ def get_meralco_rates() -> dict:
     return result
 
 
-if __name__ == "__main__":
+def main():
+    """Main entry point for running the scraper."""
     import json
 
     logging.basicConfig(
@@ -202,3 +203,7 @@ if __name__ == "__main__":
     logger.info("Fetching MERALCO electricity rates...")
     rates = get_meralco_rates()
     print(json.dumps(rates, indent=2, default=str))
+
+
+if __name__ == "__main__":
+    main()

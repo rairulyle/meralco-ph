@@ -15,3 +15,7 @@ pytest = "*"
 
 [requires]
 python_version = "3.12"
+
+[scripts]
+start = "bash -c 'PYTHONPATH=. python -m src.api'"
+test = "bash -c 'PYTHONPATH=. pytest tests/ -v'"

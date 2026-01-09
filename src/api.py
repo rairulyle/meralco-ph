@@ -9,7 +9,7 @@ import logging
 from datetime import datetime
 
 from flask import Flask, jsonify
-from scraper import get_meralco_rates
+from .scraper import get_meralco_rates
 
 logging.basicConfig(
     level=logging.INFO,
@@ -85,5 +85,10 @@ def rates():
     return jsonify(clean_response(data))
 
 
-if __name__ == "__main__":
+def main():
+    """Main entry point for running the API server."""
     app.run(host="0.0.0.0", port=5000, debug=True)
+
+
+if __name__ == "__main__":
+    main()
