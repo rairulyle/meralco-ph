@@ -41,6 +41,21 @@ def get_current_month_url() -> tuple[str, str]:
     return higher_url, lower_url
 
 
+def get_month_url(target_date: datetime) -> tuple[str, str]:
+    """
+    Generate the URL for a specific month's rate announcement.
+    Returns tuple of (higher_url, lower_url) since we don't know which one exists.
+    """
+    month = target_date.strftime("%B").lower()  # e.g., "december"
+    year = target_date.year
+
+    base_url = "https://company.meralco.com.ph/news-and-advisories"
+    higher_url = f"{base_url}/higher-rates-{month}-{year}"
+    lower_url = f"{base_url}/lower-rates-{month}-{year}"
+
+    return higher_url, lower_url
+
+
 def fetch_page_content(url: str) -> str | None:
     """Fetch page content using Playwright for JavaScript-rendered pages."""
     try:
@@ -102,19 +117,21 @@ def parse_rates(html_content: str) -> dict:
     return rates
 
 
-def get_meralco_rates() -> dict:
+def try_fetch_rates_for_date(target_date: datetime) -> dict:
     """
-    Main function to get current MERALCO electricity rates.
+    Try to fetch rates for a specific date.
     Returns a dictionary with rate information.
     """
-    higher_url, lower_url = get_current_month_url()
+    higher_url, lower_url = get_month_url(target_date)
 
     result = {
         "success": False,
         "url": None,
         "data": {},
         "error": None,
+        "warning": None,
         "timestamp": datetime.now().isoformat(),
+        "target_month": target_date.strftime("%B %Y"),
     }
 
     # Try lower rates first (more common to have decreases)
@@ -139,7 +156,38 @@ def get_meralco_rates() -> dict:
                 result["data"] = data
                 return result
 
-    result["error"] = "Could not find rate information for current month"
+    result["error"] = f"Could not find rate information for {target_date.strftime('%B %Y')}"
+    return result
+
+
+def get_meralco_rates() -> dict:
+    """
+    Main function to get current MERALCO electricity rates.
+    Tries current month first, then falls back to previous month if needed.
+    Returns a dictionary with rate information.
+    """
+    from dateutil.relativedelta import relativedelta
+
+    now = datetime.now()
+
+    # Try current month
+    logger.info("Attempting to fetch rates for current month...")
+    result = try_fetch_rates_for_date(now)
+
+    if result["success"]:
+        return result
+
+    # Current month failed, try previous month
+    logger.warning("Current month failed, trying previous month...")
+    previous_month = now - relativedelta(months=1)
+    result = try_fetch_rates_for_date(previous_month)
+
+    if result["success"]:
+        result["warning"] = f"{now.strftime('%B %Y')} rates not yet available. Using {previous_month.strftime('%B %Y')} rates instead."
+        return result
+
+    # Both failed
+    result["error"] = "Could not find rate information for current or previous month"
     return result
 
 
