@@ -5,12 +5,12 @@ Scrapes the current electricity rate from MERALCO (Manila Electric Company)
 Philippines news and advisories page.
 """
 
+import asyncio
 import logging
 import re
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 
-from playwright.sync_api import sync_playwright
+from pyppeteer import launch
 from bs4 import BeautifulSoup
 
 logger = logging.getLogger(__name__)
@@ -39,19 +39,17 @@ def get_month_url(target_date: datetime) -> tuple[str, str]:
     return higher_url, lower_url
 
 
-def fetch_page_content(url: str, trend: str) -> tuple[str, str | None, str]:
+async def fetch_page_content(browser, url: str, trend: str) -> tuple[str, str | None, str]:
     """
-    Fetch page content using Playwright for JavaScript-rendered pages.
+    Fetch page content using pyppeteer for JavaScript-rendered pages.
     Returns tuple of (url, content, trend).
     """
     try:
-        with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
-            page = browser.new_page()
-            page.goto(url, wait_until="networkidle", timeout=30000)
-            content = page.content()
-            browser.close()
-            return (url, content, trend)
+        page = await browser.newPage()
+        await page.goto(url, {'waitUntil': 'networkidle0', 'timeout': 30000})
+        content = await page.content()
+        await page.close()
+        return (url, content, trend)
     except Exception as e:
         logger.error("Error fetching %s: %s", url, e)
         return (url, None, trend)
@@ -106,6 +104,24 @@ def parse_rates(html_content: str) -> dict:
     return rates
 
 
+async def fetch_urls_parallel(urls_to_fetch: list[tuple[str, str]]) -> list[tuple[str, str | None, str]]:
+    """Fetch multiple URLs in parallel using async."""
+    import os
+    chromium_path = os.environ.get('PYPPETEER_CHROMIUM_EXECUTABLE')
+    launch_args = {
+        'headless': True,
+        'args': ['--no-sandbox', '--disable-dev-shm-usage']
+    }
+    if chromium_path:
+        launch_args['executablePath'] = chromium_path
+
+    browser = await launch(**launch_args)
+    tasks = [fetch_page_content(browser, url, trend) for url, trend in urls_to_fetch]
+    results = await asyncio.gather(*tasks)
+    await browser.close()
+    return list(results)
+
+
 def try_fetch_rates_for_date(target_date: datetime) -> dict:
     """
     Try to fetch rates for a specific date.
@@ -126,20 +142,15 @@ def try_fetch_rates_for_date(target_date: datetime) -> dict:
 
     # Fetch both URLs in parallel
     urls_to_fetch = [(lower_url, "down"), (higher_url, "up")]
-    fetched_pages = []
 
     logger.info("Fetching URLs in parallel...")
-    with ThreadPoolExecutor(max_workers=2) as executor:
-        futures = {
-            executor.submit(fetch_page_content, url, trend): (url, trend)
-            for url, trend in urls_to_fetch
-        }
-        for future in as_completed(futures):
-            url, content, trend = future.result()
-            logger.info("Fetched %s: %s", url,
-                        "success" if content else "failed")
-            if content:
-                fetched_pages.append((url, content, trend))
+    fetched_results = asyncio.run(fetch_urls_parallel(urls_to_fetch))
+
+    fetched_pages = []
+    for url, content, trend in fetched_results:
+        logger.info("Fetched %s: %s", url, "success" if content else "failed")
+        if content:
+            fetched_pages.append((url, content, trend))
 
     # Process fetched pages (prefer lower rates first)
     fetched_pages.sort(key=lambda x: 0 if x[2] == "down" else 1)
