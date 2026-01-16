@@ -7,22 +7,13 @@ Philippines news and advisories page.
 
 import logging
 import re
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 
-import requests
 from playwright.sync_api import sync_playwright
 from bs4 import BeautifulSoup
 
 logger = logging.getLogger(__name__)
-
-
-def is_url_reachable(url: str) -> bool:
-    """Check if URL exists using a lightweight HEAD request."""
-    try:
-        response = requests.head(url, timeout=10, allow_redirects=True)
-        return response.status_code == 200
-    except requests.RequestException:
-        return False
 
 
 def get_current_month_url() -> tuple[str, str]:
@@ -56,8 +47,11 @@ def get_month_url(target_date: datetime) -> tuple[str, str]:
     return higher_url, lower_url
 
 
-def fetch_page_content(url: str) -> str | None:
-    """Fetch page content using Playwright for JavaScript-rendered pages."""
+def fetch_page_content(url: str, trend: str) -> tuple[str, str | None, str]:
+    """
+    Fetch page content using Playwright for JavaScript-rendered pages.
+    Returns tuple of (url, content, trend).
+    """
     try:
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True)
@@ -65,10 +59,10 @@ def fetch_page_content(url: str) -> str | None:
             page.goto(url, wait_until="networkidle", timeout=30000)
             content = page.content()
             browser.close()
-            return content
+            return (url, content, trend)
     except Exception as e:
         logger.error("Error fetching %s: %s", url, e)
-        return None
+        return (url, None, trend)
 
 
 def parse_rates(html_content: str) -> dict:
@@ -120,6 +114,7 @@ def parse_rates(html_content: str) -> dict:
 def try_fetch_rates_for_date(target_date: datetime) -> dict:
     """
     Try to fetch rates for a specific date.
+    Fetches both URLs in parallel for speed.
     Returns a dictionary with rate information.
     """
     higher_url, lower_url = get_month_url(target_date)
@@ -134,20 +129,27 @@ def try_fetch_rates_for_date(target_date: datetime) -> dict:
         "target_month": target_date.strftime("%B %Y"),
     }
 
-    # Try lower rates first (more common to have decreases)
-    for url, trend in [(lower_url, "down"), (higher_url, "up")]:
-        logger.info("Checking URL: %s", url)
+    # Fetch both URLs in parallel
+    urls_to_fetch = [(lower_url, "down"), (higher_url, "up")]
+    fetched_pages = []
 
-        # First, check if URL exists with lightweight HEAD request
-        if not is_url_reachable(url):
-            logger.info("URL not reachable, skipping")
-            continue
+    logger.info("Fetching URLs in parallel...")
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        futures = {
+            executor.submit(fetch_page_content, url, trend): (url, trend)
+            for url, trend in urls_to_fetch
+        }
+        for future in as_completed(futures):
+            url, content, trend = future.result()
+            logger.info("Fetched %s: %s", url, "success" if content else "failed")
+            if content:
+                fetched_pages.append((url, content, trend))
 
-        # URL exists, now fetch with Playwright for JS-rendered content
-        logger.info("URL reachable, fetching content with Playwright...")
-        content = fetch_page_content(url)
+    # Process fetched pages (prefer lower rates first)
+    fetched_pages.sort(key=lambda x: 0 if x[2] == "down" else 1)
 
-        if content and "Page not found" not in content:
+    for url, content, trend in fetched_pages:
+        if "PAGE NOT FOUND" not in content:
             data = parse_rates(content)
             if data.get("rate_kwh") or data.get("raw_text"):
                 data["trend"] = trend
