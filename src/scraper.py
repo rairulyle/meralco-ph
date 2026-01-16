@@ -16,33 +16,25 @@ from bs4 import BeautifulSoup
 logger = logging.getLogger(__name__)
 
 
-def get_current_month_url() -> tuple[str, str]:
-    """
-    Generate the URL for the current month's rate announcement.
-    Returns tuple of (higher_url, lower_url) since we don't know which one exists.
-    """
-    now = datetime.now()
-    month = now.strftime("%B").lower()  # e.g., "december"
-    year = now.year
-
-    base_url = "https://company.meralco.com.ph/news-and-advisories"
-    higher_url = f"{base_url}/higher-rates-{month}-{year}"
-    lower_url = f"{base_url}/lower-rates-{month}-{year}"
-
-    return higher_url, lower_url
-
-
 def get_month_url(target_date: datetime) -> tuple[str, str]:
     """
     Generate the URL for a specific month's rate announcement.
     Returns tuple of (higher_url, lower_url) since we don't know which one exists.
+
+    Note: Starting 2026, MERALCO changed their URL format to not include the year.
     """
     month = target_date.strftime("%B").lower()  # e.g., "december"
     year = target_date.year
 
     base_url = "https://company.meralco.com.ph/news-and-advisories"
-    higher_url = f"{base_url}/higher-rates-{month}-{year}"
-    lower_url = f"{base_url}/lower-rates-{month}-{year}"
+
+    # New format: no year in URL
+    higher_url = f"{base_url}/higher-rates-{month}"
+    lower_url = f"{base_url}/lower-rates-{month}"
+
+    # Old format: includes year
+    # higher_url = f"{base_url}/higher-rates-{month}-{year}"
+    # lower_url = f"{base_url}/lower-rates-{month}-{year}"
 
     return higher_url, lower_url
 
@@ -80,11 +72,13 @@ def parse_rates(html_content: str) -> dict:
     # Find the main content area
     main_content = soup.find("main", id="main-content")
     if not main_content:
-        main_content = soup.find("article") or soup.find("div", class_="content")
+        main_content = soup.find("article") or soup.find(
+            "div", class_="content")
 
     if main_content:
         text_content = main_content.get_text(separator=" ", strip=True)
-        rates["raw_text"] = text_content[:1000]  # Store first 1000 chars for debugging
+        # Store first 1000 chars for debugging
+        rates["raw_text"] = text_content[:1000]
 
         # Pattern matching for common rate formats
         # Overall rate: "overall rate for a typical household to P13.1145 per kWh"
@@ -106,7 +100,8 @@ def parse_rates(html_content: str) -> dict:
             # Calculate percentage change if we have both values
             if rates["rate_kwh"] and rates["rate_change"]:
                 previous_rate = rates["rate_kwh"] - rates["rate_change"]
-                rates["rate_change_percent"] = round((rates["rate_change"] / previous_rate) * 100, 2)
+                rates["rate_change_percent"] = round(
+                    (rates["rate_change"] / previous_rate) * 100, 2)
 
     return rates
 
@@ -141,7 +136,8 @@ def try_fetch_rates_for_date(target_date: datetime) -> dict:
         }
         for future in as_completed(futures):
             url, content, trend = future.result()
-            logger.info("Fetched %s: %s", url, "success" if content else "failed")
+            logger.info("Fetched %s: %s", url,
+                        "success" if content else "failed")
             if content:
                 fetched_pages.append((url, content, trend))
 
