@@ -6,6 +6,7 @@ electricity rates in the Philippines.
 """
 
 import logging
+import threading
 from datetime import datetime
 
 from flask import Flask, jsonify
@@ -20,7 +21,10 @@ logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
-_cache = {"data": None, "month": None}
+FALLBACK_RETRY_SECONDS = 3600
+
+_cache = {"data": None, "month": None, "is_fallback": False, "timestamp": None}
+_fetch_lock = threading.Lock()
 
 
 def is_cache_valid() -> bool:
@@ -29,13 +33,23 @@ def is_cache_valid() -> bool:
         return False
 
     now = datetime.now()
-    return _cache["month"] == (now.year, now.month)
+
+    if _cache["month"] == (now.year, now.month) and not _cache["is_fallback"]:
+        return True
+
+    if _cache["is_fallback"] and _cache["timestamp"]:
+        elapsed = (now - _cache["timestamp"]).total_seconds()
+        if elapsed < FALLBACK_RETRY_SECONDS:
+            return True
+
+    return False
 
 
 @app.route("/")
 def index():
     return jsonify({
         "service": "MERALCO API",
+        "version": "1.1.1",
         "endpoints": {
             "/rates": "Get current electricity rates",
             "/health": "Health check",
@@ -57,32 +71,48 @@ def clean_response(data: dict) -> dict:
 def rates():
     """Get current MERALCO electricity rates."""
     if is_cache_valid():
-        logger.info("Returning cached data for %s-%s", _cache["month"][0], _cache["month"][1])
+        logger.info("Returning cached data for %s-%s",
+                    _cache["month"][0], _cache["month"][1])
         return jsonify(clean_response(_cache["data"]))
 
-    logger.info("Cache expired or empty, fetching fresh data...")
-    now = datetime.now()
-    data = get_meralco_rates()
+    with _fetch_lock:
+        if is_cache_valid():
+            logger.info("Returning cached data for %s-%s",
+                        _cache["month"][0], _cache["month"][1])
+            return jsonify(clean_response(_cache["data"]))
 
-    if data.get("success"):
-        if data.get("warning"):
-            logger.info("Using previous month data - caching disabled")
-        else:
-            _cache["data"] = data
-            _cache["month"] = (now.year, now.month)
-            logger.info("Successfully fetched current month rate: %s PHP/kWh", data["data"].get("rate_kwh"))
+        logger.info("Cache expired or empty, fetching fresh data...")
+        now = datetime.now()
+        data = get_meralco_rates()
+
+        if data.get("success"):
+            if data.get("warning"):
+                _cache["data"] = data
+                _cache["month"] = (now.year, now.month)
+                _cache["is_fallback"] = True
+                _cache["timestamp"] = now
+                logger.info(
+                    "Using previous month data - cached with %ds retry interval", FALLBACK_RETRY_SECONDS)
+            else:
+                _cache["data"] = data
+                _cache["month"] = (now.year, now.month)
+                _cache["is_fallback"] = False
+                _cache["timestamp"] = now
+                logger.info(
+                    "Successfully fetched current month rate: %s PHP/kWh", data["data"].get("rate_kwh"))
+            return jsonify(clean_response(data))
+
+        logger.warning("Failed to fetch rates: %s", data.get("error"))
+
+        if _cache["data"] and _cache["data"].get("success"):
+            stale_data = _cache["data"].copy()
+            if not stale_data.get("warning"):
+                stale_data["warning"] = "Current rates temporarily unavailable. Using cached values."
+            logger.info("Returning stale cached data from %s-%s",
+                        _cache["month"][0], _cache["month"][1])
+            return jsonify(clean_response(stale_data))
+
         return jsonify(clean_response(data))
-
-    logger.warning("Failed to fetch rates: %s", data.get("error"))
-
-    if _cache["data"] and _cache["data"].get("success"):
-        stale_data = _cache["data"].copy()
-        if not stale_data.get("warning"):
-            stale_data["warning"] = "Current rates temporarily unavailable. Using cached values."
-        logger.info("Returning stale cached data from %s-%s", _cache["month"][0], _cache["month"][1])
-        return jsonify(clean_response(stale_data))
-
-    return jsonify(clean_response(data))
 
 
 def main():
