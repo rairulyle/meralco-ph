@@ -49,7 +49,7 @@ def is_cache_valid() -> bool:
 def index():
     return jsonify({
         "service": "MERALCO API",
-        "version": "1.1.1",
+        "version": "1.1.2",
         "endpoints": {
             "/rates": "Get current electricity rates",
             "/health": "Health check",
