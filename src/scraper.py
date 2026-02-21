@@ -20,21 +20,14 @@ def get_month_url(target_date: datetime) -> tuple[str, str]:
     """
     Generate the URL for a specific month's rate announcement.
     Returns tuple of (higher_url, lower_url) since we don't know which one exists.
-
-    Note: Starting 2026, MERALCO changed their URL format to not include the year.
     """
-    month = target_date.strftime("%B").lower()  # e.g., "december"
+    month = target_date.strftime("%B").lower()  # e.g., "february"
     year = target_date.year
 
     base_url = "https://company.meralco.com.ph/news-and-advisories"
 
-    # New format: no year in URL
-    higher_url = f"{base_url}/higher-rates-{month}"
-    lower_url = f"{base_url}/lower-rates-{month}"
-
-    # Old format: includes year
-    # higher_url = f"{base_url}/higher-rates-{month}-{year}"
-    # lower_url = f"{base_url}/lower-rates-{month}-{year}"
+    higher_url = f"{base_url}/higher-residential-rates-{month}-{year}"
+    lower_url = f"{base_url}/lower-residential-rates-{month}-{year}"
 
     return higher_url, lower_url
 
