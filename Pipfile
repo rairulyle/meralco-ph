@@ -18,3 +18,4 @@ python_version = "3.12"
 [scripts]
 start = "bash -c 'PYTHONPATH=. python -m src.api'"
 test = "bash -c 'PYTHONPATH=. pytest tests/ -v'"
+bump = "python scripts/bump_version.py"
