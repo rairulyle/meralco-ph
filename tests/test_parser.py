@@ -153,3 +153,149 @@ class TestComputeEffectiveRates:
 
         tier_101_200 = result["tiers"][4]
         assert result["rate_kwh"] > tier_101_200["rate"]
+
+
+from src.parser import compute_rate_changes
+
+
+class TestComputeRateChanges:
+    def test_rate_changes_have_correct_length(self):
+        mar_table = _load_fixture_table(FIXTURE_PDF_MAR)
+        feb_table = _load_fixture_table(FIXTURE_PDF_FEB)
+
+        mar_tiers = parse_residential_tiers(mar_table)
+        mar_vat = parse_vat_rates(mar_table)
+        mar_result = compute_effective_rates(mar_tiers, mar_vat)
+
+        feb_tiers = parse_residential_tiers(feb_table)
+        feb_vat = parse_vat_rates(feb_table)
+        feb_result = compute_effective_rates(feb_tiers, feb_vat)
+
+        changed = compute_rate_changes(mar_result["tiers"], feb_result["tiers"])
+        assert len(changed) == 8
+
+    def test_rate_change_is_positive_mar_vs_feb(self):
+        """March 2026 had higher rates than Feb 2026."""
+        mar_table = _load_fixture_table(FIXTURE_PDF_MAR)
+        feb_table = _load_fixture_table(FIXTURE_PDF_FEB)
+
+        mar_tiers = parse_residential_tiers(mar_table)
+        mar_vat = parse_vat_rates(mar_table)
+        mar_result = compute_effective_rates(mar_tiers, mar_vat)
+
+        feb_tiers = parse_residential_tiers(feb_table)
+        feb_vat = parse_vat_rates(feb_table)
+        feb_result = compute_effective_rates(feb_tiers, feb_vat)
+
+        changed = compute_rate_changes(mar_result["tiers"], feb_result["tiers"])
+        for tier in changed:
+            assert tier["rate_change"] > 0
+            assert tier["rate_change_percent"] > 0
+
+    def test_rate_change_values(self):
+        mar_table = _load_fixture_table(FIXTURE_PDF_MAR)
+        feb_table = _load_fixture_table(FIXTURE_PDF_FEB)
+
+        mar_tiers = parse_residential_tiers(mar_table)
+        mar_vat = parse_vat_rates(mar_table)
+        mar_result = compute_effective_rates(mar_tiers, mar_vat)
+
+        feb_tiers = parse_residential_tiers(feb_table)
+        feb_vat = parse_vat_rates(feb_table)
+        feb_result = compute_effective_rates(feb_tiers, feb_vat)
+
+        changed = compute_rate_changes(mar_result["tiers"], feb_result["tiers"])
+        tier = changed[4]  # 101-200 kWh
+        assert tier["rate_change"] == round(tier["rate"] - feb_result["tiers"][4]["rate"], 4)
+
+    def test_no_previous_month_returns_null_changes(self):
+        mar_table = _load_fixture_table(FIXTURE_PDF_MAR)
+        mar_tiers = parse_residential_tiers(mar_table)
+        mar_vat = parse_vat_rates(mar_table)
+        mar_result = compute_effective_rates(mar_tiers, mar_vat)
+
+        changed = compute_rate_changes(mar_result["tiers"], None)
+        for tier in changed:
+            assert tier["rate_change"] is None
+            assert tier["rate_change_percent"] is None
+
+
+from unittest.mock import patch, MagicMock
+from src.parser import download_pdf, get_meralco_rates, _extract_billing_date
+
+
+class TestExtractBillingDate:
+    def test_extracts_date_from_fixture(self):
+        table = _load_fixture_table(FIXTURE_PDF_MAR)
+        assert _extract_billing_date(table) == "03/2026"
+
+    def test_returns_none_for_empty_table(self):
+        assert _extract_billing_date([['', '']]) is None
+
+
+class TestDownloadPdf:
+    @patch("src.parser.urllib.request.urlopen")
+    def test_success(self, mock_urlopen):
+        mock_response = MagicMock()
+        mock_response.read.return_value = b"fake pdf content"
+        mock_response.__enter__ = lambda s: s
+        mock_response.__exit__ = MagicMock(return_value=False)
+        mock_urlopen.return_value = mock_response
+
+        assert download_pdf("https://example.com/test.pdf") == b"fake pdf content"
+
+    @patch("src.parser.urllib.request.urlopen")
+    def test_failure_returns_none(self, mock_urlopen):
+        mock_urlopen.side_effect = Exception("Network error")
+        assert download_pdf("https://example.com/test.pdf") is None
+
+
+class TestGetMeralcoRates:
+    @patch("src.parser.download_pdf")
+    def test_success_with_real_pdfs(self, mock_download):
+        """Use real PDF fixtures (current + previous month) to test full pipeline."""
+        def side_effect(url):
+            if "03-2026" in url:
+                with open(FIXTURE_PDF_MAR, "rb") as f:
+                    return f.read()
+            elif "02-2026" in url:
+                with open(FIXTURE_PDF_FEB, "rb") as f:
+                    return f.read()
+            return None
+
+        mock_download.side_effect = side_effect
+
+        result = get_meralco_rates()
+        assert result["success"] is True
+        assert result["date"] is not None
+        assert len(result["data"]) == 8
+
+        for tier in result["data"]:
+            assert "rate" in tier
+            assert "rate_change" in tier
+            assert "rate_change_percent" in tier
+
+        for tier in result["data"]:
+            assert tier["rate_change"] > 0
+
+    @patch("src.parser.download_pdf")
+    def test_current_month_fails_falls_back(self, mock_download):
+        call_count = [0]
+        def side_effect(url):
+            call_count[0] += 1
+            if call_count[0] <= 1:
+                return None
+            with open(FIXTURE_PDF_MAR, "rb") as f:
+                return f.read()
+        mock_download.side_effect = side_effect
+
+        result = get_meralco_rates()
+        assert result["success"] is True
+        assert result["warning"] is not None
+
+    @patch("src.parser.download_pdf")
+    def test_both_months_fail(self, mock_download):
+        mock_download.return_value = None
+        result = get_meralco_rates()
+        assert result["success"] is False
+        assert result["error"] is not None

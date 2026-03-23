@@ -239,3 +239,164 @@ def compute_effective_rates(tiers: list[dict], vat: dict, consumption_kwh: int =
         "rate_kwh": rate_kwh,
         "tiers": enriched_tiers,
     }
+
+
+def compute_rate_changes(current_tiers: list[dict], previous_tiers: list[dict] | None) -> list[dict]:
+    """
+    Add rate_change and rate_change_percent to each tier by comparing
+    with previous month's tiers. If previous_tiers is None, changes are null.
+    """
+    result = []
+    for i, tier in enumerate(current_tiers):
+        entry = {**tier}
+        if previous_tiers and i < len(previous_tiers):
+            prev_rate = previous_tiers[i]["rate"]
+            change = round(tier["rate"] - prev_rate, 4)
+            pct = round((change / prev_rate) * 100, 2) if prev_rate else None
+            entry["rate_change"] = change
+            entry["rate_change_percent"] = pct
+        else:
+            entry["rate_change"] = None
+            entry["rate_change_percent"] = None
+        result.append(entry)
+    return result
+
+
+def download_pdf(url: str) -> bytes | None:
+    """Download PDF from URL, return bytes or None on failure."""
+    try:
+        logger.info("Downloading PDF: %s", url)
+        with urllib.request.urlopen(url, timeout=30) as response:
+            return response.read()
+    except Exception as e:
+        logger.error("Failed to download PDF from %s: %s", url, e)
+        return None
+
+
+def _extract_billing_date(table: list[list]) -> str | None:
+    """Extract billing date as MM/YYYY from the table header."""
+    header = (table[0][0] or '') if table and table[0] else ''
+    match = re.search(r'EFFECTIVE\s+(\w+)\s+(\d{4})', header, re.IGNORECASE)
+    if match:
+        from dateutil.parser import parse as parse_date
+        month_name = match.group(1)
+        year = match.group(2)
+        dt = parse_date(f"{month_name} {year}")
+        return f"{dt.month:02d}/{dt.year}"
+    return None
+
+
+def _parse_single_month(pdf_bytes: bytes) -> dict | None:
+    """Parse a single month's PDF and return tiers with rates, or None on failure."""
+    try:
+        with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
+            if not pdf.pages:
+                return None
+
+            tables = pdf.pages[0].extract_tables()
+            if not tables:
+                return None
+
+            main_table = tables[0]
+            tiers = parse_residential_tiers(main_table)
+            if not tiers:
+                return None
+
+            vat = parse_vat_rates(main_table)
+            computed = compute_effective_rates(tiers, vat, consumption_kwh=200)
+            billing_date = _extract_billing_date(main_table)
+
+            return {
+                "tiers": computed["tiers"],
+                "rate_kwh": computed["rate_kwh"],
+                "billing_date": billing_date,
+            }
+    except Exception as e:
+        logger.error("Error parsing PDF: %s", e)
+        return None
+
+
+def get_meralco_rates() -> dict:
+    """
+    Main function to get current MERALCO electricity rates with rate changes.
+
+    Downloads current and previous month PDFs, computes rates for both,
+    then diffs them for rate_change values.
+    """
+    from dateutil.relativedelta import relativedelta
+
+    now = datetime.now()
+    result = {
+        "success": False,
+        "error": None,
+        "warning": None,
+        "date": None,
+        "data": None,
+        "meta": {
+            "timestamp": now.isoformat(),
+            "source": None,
+        },
+    }
+
+    # Try current month
+    current_url = get_pdf_url(now)
+    current_bytes = download_pdf(current_url)
+    current_parsed = _parse_single_month(current_bytes) if current_bytes else None
+
+    if not current_parsed:
+        # Fall back to previous month as "current"
+        logger.warning("Current month failed, trying previous month...")
+        prev = now - relativedelta(months=1)
+        current_url = get_pdf_url(prev)
+        current_bytes = download_pdf(current_url)
+        current_parsed = _parse_single_month(current_bytes) if current_bytes else None
+
+        if not current_parsed:
+            result["error"] = "Could not find rate information for current or previous month"
+            return result
+
+        result["warning"] = (
+            f"{now.strftime('%B %Y')} rates not yet available. "
+            f"Using {prev.strftime('%B %Y')} rates instead."
+        )
+
+        # Previous month's previous for rate change
+        prev_prev = prev - relativedelta(months=1)
+        prev_url = get_pdf_url(prev_prev)
+    else:
+        # Previous month for rate change
+        prev = now - relativedelta(months=1)
+        prev_url = get_pdf_url(prev)
+
+    # Fetch previous month for rate changes
+    prev_bytes = download_pdf(prev_url)
+    prev_parsed = _parse_single_month(prev_bytes) if prev_bytes else None
+    prev_tiers = prev_parsed["tiers"] if prev_parsed else None
+
+    # Compute rate changes
+    tiers_with_changes = compute_rate_changes(current_parsed["tiers"], prev_tiers)
+
+    result["success"] = True
+    result["date"] = current_parsed["billing_date"]
+    result["data"] = tiers_with_changes
+    result["meta"]["source"] = current_url
+
+    return result
+
+
+def main():
+    """Main entry point for running the parser."""
+    import json
+
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s - %(levelname)s - %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
+    logger.info("Fetching MERALCO electricity rates...")
+    rates = get_meralco_rates()
+    print(json.dumps(rates, indent=2, default=str))
+
+
+if __name__ == "__main__":
+    main()
