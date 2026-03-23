@@ -10,7 +10,7 @@ import threading
 from datetime import datetime
 
 from flask import Flask, jsonify
-from .scraper import get_meralco_rates
+from .parser import get_meralco_rates
 
 logging.basicConfig(
     level=logging.INFO,

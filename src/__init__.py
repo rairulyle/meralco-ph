@@ -1,7 +1,7 @@
 """
-MERALCO Scraper - Philippines Electricity Rate API
+MERALCO API - Philippines Electricity Rate API
 
-Provides tools to scrape and serve current MERALCO electricity rates.
+Provides tools to parse and serve current MERALCO electricity rates.
 """
 
 __version__ = "1.1.2"
