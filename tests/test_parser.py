@@ -103,3 +103,53 @@ class TestParseVatRates:
         assert vat["generation"] > 0
         assert vat["transmission"] > 0
         assert vat["system_loss"] > 0
+
+
+from src.parser import compute_effective_rates
+
+
+class TestComputeEffectiveRates:
+    def test_200kwh_rate_near_meralco_published(self):
+        """
+        MERALCO publishes P13.8161 for 200 kWh. Our formula excludes local
+        franchise tax (~0.4%), so we expect ~P13.76 within P0.10 tolerance.
+        """
+        table = _load_fixture_table(FIXTURE_PDF_MAR)
+        tiers = parse_residential_tiers(table)
+        vat = parse_vat_rates(table)
+        result = compute_effective_rates(tiers, vat, consumption_kwh=200)
+
+        assert result["rate_kwh"] is not None
+        assert abs(result["rate_kwh"] - 13.8161) < 0.10
+
+    def test_has_all_tiers(self):
+        table = _load_fixture_table(FIXTURE_PDF_MAR)
+        tiers = parse_residential_tiers(table)
+        vat = parse_vat_rates(table)
+        result = compute_effective_rates(tiers, vat, consumption_kwh=200)
+
+        assert len(result["tiers"]) == 8
+        for tier in result["tiers"]:
+            assert tier["rate"] > 0
+
+    def test_higher_tiers_cost_more(self):
+        table = _load_fixture_table(FIXTURE_PDF_MAR)
+        tiers = parse_residential_tiers(table)
+        vat = parse_vat_rates(table)
+        result = compute_effective_rates(tiers, vat, consumption_kwh=200)
+
+        rates = [t["rate"] for t in result["tiers"]]
+        for i in range(1, 5):
+            assert rates[i] == rates[0]
+        assert rates[5] > rates[4]
+        assert rates[6] > rates[5]
+        assert rates[7] > rates[6]
+
+    def test_typical_rate_includes_fixed_charges(self):
+        table = _load_fixture_table(FIXTURE_PDF_MAR)
+        tiers = parse_residential_tiers(table)
+        vat = parse_vat_rates(table)
+        result = compute_effective_rates(tiers, vat, consumption_kwh=200)
+
+        tier_101_200 = result["tiers"][4]
+        assert result["rate_kwh"] > tier_101_200["rate"]

@@ -160,3 +160,82 @@ def parse_vat_rates(table: list[list]) -> dict:
         logger.warning("Some VAT rates not found in PDF, using defaults: %s", vat)
 
     return vat
+
+
+def compute_effective_rates(tiers: list[dict], vat: dict, consumption_kwh: int = 200) -> dict:
+    """
+    Compute VAT-inclusive effective rates for each tier and the typical household rate.
+
+    VAT application rules (from the PDF's VAT rates table):
+    - Generation: variable % (e.g. 11.30%, includes franchise tax effect)
+    - Transmission: variable % (e.g. 10.49%)
+    - System Loss: variable % (e.g. 11.17%)
+    - Other Charges (distribution, supply, metering, AWAT, reg reset,
+      lifeline subsidy, senior citizen): 12%
+    - Zero-VAT (RPT, universal charges, FIT-All, GEA-All): 0%
+
+    Note: Excludes local franchise tax (~0.4%), which varies by LGU.
+    """
+    gen_mult = 1 + vat["generation"] / 100
+    trans_mult = 1 + vat["transmission"] / 100
+    sl_mult = 1 + vat["system_loss"] / 100
+    other_mult = 1 + vat["other"] / 100
+
+    enriched_tiers = []
+    for tier in tiers:
+        gen_eff = (tier["generation"] or 0) * gen_mult
+        trans_eff = (tier["transmission"] or 0) * trans_mult
+        sl_eff = (tier["system_loss"] or 0) * sl_mult
+
+        other_per_kwh = (
+            (tier["distribution"] or 0)
+            + (tier["supply"] or 0)
+            + (tier["metering"] or 0)
+            + (tier.get("awat") or 0)
+            + (tier.get("regulatory_reset") or 0)
+            + (tier.get("lifeline_subsidy") or 0)
+            + (tier.get("senior_citizen") or 0)
+        )
+        other_eff = other_per_kwh * other_mult
+
+        zero_vat = (
+            (tier.get("rpt") or 0)
+            + (tier.get("uc_me_npc") or 0)
+            + (tier.get("uc_me_red") or 0)
+            + (tier.get("uc_ec") or 0)
+            + (tier.get("uc_sd") or 0)
+            + (tier.get("fit_all") or 0)
+            + (tier.get("gea_all") or 0)
+        )
+
+        rate = round(gen_eff + trans_eff + sl_eff + other_eff + zero_vat, 4)
+
+        enriched_tiers.append({
+            "name": tier["name"],
+            "min_kwh": tier["min_kwh"],
+            "max_kwh": tier["max_kwh"],
+            "rate": rate,
+        })
+
+    # Compute "typical household" effective rate (includes fixed monthly charges)
+    typical_tier = None
+    typical_idx = None
+    for i, tier in enumerate(enriched_tiers):
+        if tier["max_kwh"] is None or consumption_kwh <= tier["max_kwh"]:
+            typical_tier = tier
+            typical_idx = i
+            break
+
+    rate_kwh = None
+    if typical_tier:
+        raw_tier = tiers[typical_idx]
+        fixed_monthly = (
+            (raw_tier["supply_monthly"] or 0) + (raw_tier["metering_monthly"] or 0)
+        ) * other_mult
+        total_bill = typical_tier["rate"] * consumption_kwh + fixed_monthly
+        rate_kwh = round(total_bill / consumption_kwh, 4)
+
+    return {
+        "rate_kwh": rate_kwh,
+        "tiers": enriched_tiers,
+    }
