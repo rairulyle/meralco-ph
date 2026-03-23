@@ -33,7 +33,6 @@ MOCK_RATES = {
         {"name": "Over 400 kWh", "min_kwh": 401, "max_kwh": None,
          "rate": 14.9933, "rate_change": 0.6289, "rate_change_percent": 4.38, "trend": "up"},
     ],
-    "typical_rate": 13.8777,
     "meta": {"timestamp": "2026-06-09T10:00:00", "source": "https://example.com/test.pdf"},
 }
 
@@ -102,7 +101,7 @@ def test_rates_typical(mock_get_rates, mock_datetime, client):
     data = json.loads(response.data)
     assert data["success"] is True
     assert data["data"]["name"] == "101-200 kWh"
-    assert data["data"]["rate"] == 13.8777
+    assert data["data"]["rate"] == 13.7580
     assert "error" not in data
     assert "warning" not in data
 

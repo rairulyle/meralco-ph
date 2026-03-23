@@ -120,12 +120,20 @@ def health():
     return jsonify({"status": "ok"})
 
 
+def _tier_response(result: dict, data) -> dict:
+    """Build a standard tier response."""
+    resp = {"success": True, "date": result.get("date"), "data": data, "meta": result.get("meta")}
+    if result.get("warning"):
+        resp["warning"] = result["warning"]
+    return resp
+
+
 @app.route("/rates")
 def rates():
     result = _fetch_and_cache()
-    # typical_rate is internal, don't expose in /rates
-    response = {k: v for k, v in result.items() if k != "typical_rate"}
-    return jsonify(_clean_response(response))
+    if not result.get("success"):
+        return jsonify(_clean_response(result))
+    return jsonify(_tier_response(result, result.get("data")))
 
 
 @app.route("/rates/<tier_slug>")
@@ -136,16 +144,8 @@ def rates_by_tier(tier_slug):
         return jsonify(_clean_response(result))
 
     tier_name = TIER_SLUG_MAP.get(tier_slug)
-    if not tier_name:
-        return jsonify(_clean_response({
-            "success": False,
-            "error": "Tier not found",
-            "date": result.get("date"),
-            "data": None,
-            "meta": result.get("meta"),
-        })), 404
+    tier = _find_tier(result.get("data", []), tier_name) if tier_name else None
 
-    tier = _find_tier(result.get("data", []), tier_name)
     if not tier:
         return jsonify(_clean_response({
             "success": False,
@@ -155,18 +155,7 @@ def rates_by_tier(tier_slug):
             "meta": result.get("meta"),
         })), 404
 
-    # For /rates/typical, use the rate that includes fixed monthly charges
-    data = {**tier}
-    if tier_slug == "typical" and result.get("typical_rate"):
-        data["rate"] = result["typical_rate"]
-
-    return jsonify(_clean_response({
-        "success": True,
-        "warning": result.get("warning"),
-        "date": result.get("date"),
-        "data": data,
-        "meta": result.get("meta"),
-    }))
+    return jsonify(_tier_response(result, tier))
 
 
 def main():

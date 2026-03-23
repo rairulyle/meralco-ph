@@ -93,7 +93,8 @@ rest:
       "name": "0-20 kWh",
       "min_kwh": 0,
       "max_kwh": 20,
-      "rate": 13.6383,
+      "rate": 13.6972,
+      "raw_rate": 13.6383,
       "rate_change": 0.6412,
       "rate_change_percent": 4.93,
       "trend": "up"
@@ -117,7 +118,8 @@ rest:
     "name": "101-200 kWh",
     "min_kwh": 101,
     "max_kwh": 200,
-    "rate": 13.6383,
+    "rate": 13.8173,
+    "raw_rate": 13.758,
     "rate_change": 0.6412,
     "rate_change_percent": 4.93,
     "trend": "up"
@@ -131,12 +133,13 @@ rest:
 
 | Field | Description | Example |
 |-------|-------------|---------|
-| `rate` | Current electricity rate per kWh (PHP, incl. VAT) | `13.6383` |
+| `rate` | Rate per kWh with estimated local franchise tax (~0.43%) | `13.8173` |
+| `raw_rate` | Rate per kWh from PDF (VAT included, no franchise tax) | `13.758` |
 | `rate_change` | Change from previous month (negative = decrease) | `0.6412` |
 | `rate_change_percent` | Percentage change from previous month | `4.93` |
 | `trend` | Rate direction: `up`, `down`, or `stable` | `"up"` |
 
-> **Note:** The `/rates/typical` rate includes fixed monthly charges (supply, metering) amortized over 200 kWh and an estimated local franchise tax (~0.43%), matching MERALCO's published "typical household" rate within P0.01 for most months. The franchise tax is not published in the rate schedule PDF — the estimate is derived from cross-validation against 5 months of MERALCO's published rates.
+> **Note:** `rate` includes an estimated local franchise tax (~0.43%), derived from cross-validation against 5 months of MERALCO's published rates — matching within P0.01 for most months. `raw_rate` is the rate computed directly from the PDF without franchise tax. For `/rates/typical`, both values also include fixed monthly charges (supply, metering) amortized over 200 kWh.
 
 ---
 

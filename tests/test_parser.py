@@ -104,51 +104,41 @@ from src.parser import compute_effective_rates
 
 
 class TestComputeEffectiveRates:
-    def test_200kwh_rate_near_meralco_published(self):
-        """
-        MERALCO publishes P13.8161 for 200 kWh. Our formula excludes local
-        franchise tax (~0.4%), so we expect ~P13.76 within P0.10 tolerance.
-        """
+    def test_101_200_rate_reasonable(self):
+        """Per-kWh rate should be close to MERALCO's published rate (excludes fixed charges)."""
         table = _load_fixture_table(FIXTURE_PDF_MAR)
         tiers = parse_residential_tiers(table)
         vat = parse_vat_rates(table)
-        result = compute_effective_rates(tiers, vat, consumption_kwh=200)
+        result = compute_effective_rates(tiers, vat)
 
-        assert result["rate_kwh"] is not None
-        # Should match MERALCO's published rate within P0.01
-        assert abs(result["rate_kwh"] - 13.8161) < 0.01
+        tier_101_200 = result[4]
+        # Per-kWh rate is ~P0.12 below MERALCO's published rate (which includes fixed charges)
+        assert abs(tier_101_200["rate"] - 13.8161) < 0.15
 
     def test_has_all_tiers(self):
         table = _load_fixture_table(FIXTURE_PDF_MAR)
         tiers = parse_residential_tiers(table)
         vat = parse_vat_rates(table)
-        result = compute_effective_rates(tiers, vat, consumption_kwh=200)
+        result = compute_effective_rates(tiers, vat)
 
-        assert len(result["tiers"]) == 8
-        for tier in result["tiers"]:
+        assert len(result) == 8
+        for tier in result:
             assert tier["rate"] > 0
+            assert tier["raw_rate"] > 0
+            assert tier["rate"] > tier["raw_rate"]
 
     def test_higher_tiers_cost_more(self):
         table = _load_fixture_table(FIXTURE_PDF_MAR)
         tiers = parse_residential_tiers(table)
         vat = parse_vat_rates(table)
-        result = compute_effective_rates(tiers, vat, consumption_kwh=200)
+        result = compute_effective_rates(tiers, vat)
 
-        rates = [t["rate"] for t in result["tiers"]]
+        rates = [t["rate"] for t in result]
         for i in range(1, 5):
             assert rates[i] == rates[0]
         assert rates[5] > rates[4]
         assert rates[6] > rates[5]
         assert rates[7] > rates[6]
-
-    def test_typical_rate_includes_fixed_charges(self):
-        table = _load_fixture_table(FIXTURE_PDF_MAR)
-        tiers = parse_residential_tiers(table)
-        vat = parse_vat_rates(table)
-        result = compute_effective_rates(tiers, vat, consumption_kwh=200)
-
-        tier_101_200 = result["tiers"][4]
-        assert result["rate_kwh"] > tier_101_200["rate"]
 
 
 from src.parser import compute_rate_changes
@@ -159,15 +149,10 @@ class TestComputeRateChanges:
         mar_table = _load_fixture_table(FIXTURE_PDF_MAR)
         feb_table = _load_fixture_table(FIXTURE_PDF_FEB)
 
-        mar_tiers = parse_residential_tiers(mar_table)
-        mar_vat = parse_vat_rates(mar_table)
-        mar_result = compute_effective_rates(mar_tiers, mar_vat)
+        mar_computed = compute_effective_rates(parse_residential_tiers(mar_table), parse_vat_rates(mar_table))
+        feb_computed = compute_effective_rates(parse_residential_tiers(feb_table), parse_vat_rates(feb_table))
 
-        feb_tiers = parse_residential_tiers(feb_table)
-        feb_vat = parse_vat_rates(feb_table)
-        feb_result = compute_effective_rates(feb_tiers, feb_vat)
-
-        changed = compute_rate_changes(mar_result["tiers"], feb_result["tiers"])
+        changed = compute_rate_changes(mar_computed, feb_computed)
         assert len(changed) == 8
 
     def test_rate_change_is_positive_mar_vs_feb(self):
@@ -175,15 +160,10 @@ class TestComputeRateChanges:
         mar_table = _load_fixture_table(FIXTURE_PDF_MAR)
         feb_table = _load_fixture_table(FIXTURE_PDF_FEB)
 
-        mar_tiers = parse_residential_tiers(mar_table)
-        mar_vat = parse_vat_rates(mar_table)
-        mar_result = compute_effective_rates(mar_tiers, mar_vat)
+        mar_computed = compute_effective_rates(parse_residential_tiers(mar_table), parse_vat_rates(mar_table))
+        feb_computed = compute_effective_rates(parse_residential_tiers(feb_table), parse_vat_rates(feb_table))
 
-        feb_tiers = parse_residential_tiers(feb_table)
-        feb_vat = parse_vat_rates(feb_table)
-        feb_result = compute_effective_rates(feb_tiers, feb_vat)
-
-        changed = compute_rate_changes(mar_result["tiers"], feb_result["tiers"])
+        changed = compute_rate_changes(mar_computed, feb_computed)
         for tier in changed:
             assert tier["rate_change"] > 0
             assert tier["rate_change_percent"] > 0
@@ -193,25 +173,18 @@ class TestComputeRateChanges:
         mar_table = _load_fixture_table(FIXTURE_PDF_MAR)
         feb_table = _load_fixture_table(FIXTURE_PDF_FEB)
 
-        mar_tiers = parse_residential_tiers(mar_table)
-        mar_vat = parse_vat_rates(mar_table)
-        mar_result = compute_effective_rates(mar_tiers, mar_vat)
+        mar_computed = compute_effective_rates(parse_residential_tiers(mar_table), parse_vat_rates(mar_table))
+        feb_computed = compute_effective_rates(parse_residential_tiers(feb_table), parse_vat_rates(feb_table))
 
-        feb_tiers = parse_residential_tiers(feb_table)
-        feb_vat = parse_vat_rates(feb_table)
-        feb_result = compute_effective_rates(feb_tiers, feb_vat)
-
-        changed = compute_rate_changes(mar_result["tiers"], feb_result["tiers"])
+        changed = compute_rate_changes(mar_computed, feb_computed)
         tier = changed[4]  # 101-200 kWh
-        assert tier["rate_change"] == round(tier["rate"] - feb_result["tiers"][4]["rate"], 4)
+        assert tier["rate_change"] == round(tier["rate"] - feb_computed[4]["rate"], 4)
 
     def test_no_previous_month_returns_null_changes(self):
         mar_table = _load_fixture_table(FIXTURE_PDF_MAR)
-        mar_tiers = parse_residential_tiers(mar_table)
-        mar_vat = parse_vat_rates(mar_table)
-        mar_result = compute_effective_rates(mar_tiers, mar_vat)
+        mar_computed = compute_effective_rates(parse_residential_tiers(mar_table), parse_vat_rates(mar_table))
 
-        changed = compute_rate_changes(mar_result["tiers"], None)
+        changed = compute_rate_changes(mar_computed, None)
         for tier in changed:
             assert tier["rate_change"] is None
             assert tier["rate_change_percent"] is None

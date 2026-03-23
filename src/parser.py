@@ -218,38 +218,18 @@ def compute_effective_rates(tiers: list[dict], vat: dict, consumption_kwh: int =
         )
 
         lft_mult = 1 + LOCAL_FRANCHISE_TAX_PCT / 100
-        rate = round((gen_eff + trans_eff + sl_eff + other_eff + zero_vat) * lft_mult, 4)
+        raw_rate = round(gen_eff + trans_eff + sl_eff + other_eff + zero_vat, 4)
+        rate = round(raw_rate * lft_mult, 4)
 
         enriched_tiers.append({
             "name": tier["name"],
             "min_kwh": tier["min_kwh"],
             "max_kwh": tier["max_kwh"],
             "rate": rate,
+            "raw_rate": raw_rate,
         })
 
-    # Compute "typical household" effective rate (includes fixed monthly charges)
-    typical_tier = None
-    typical_idx = None
-    for i, tier in enumerate(enriched_tiers):
-        if tier["max_kwh"] is None or consumption_kwh <= tier["max_kwh"]:
-            typical_tier = tier
-            typical_idx = i
-            break
-
-    rate_kwh = None
-    if typical_tier:
-        raw_tier = tiers[typical_idx]
-        lft_mult = 1 + LOCAL_FRANCHISE_TAX_PCT / 100
-        fixed_monthly = (
-            (raw_tier["supply_monthly"] or 0) + (raw_tier["metering_monthly"] or 0)
-        ) * other_mult * lft_mult
-        total_bill = typical_tier["rate"] * consumption_kwh + fixed_monthly
-        rate_kwh = round(total_bill / consumption_kwh, 4)
-
-    return {
-        "rate_kwh": rate_kwh,
-        "tiers": enriched_tiers,
-    }
+    return enriched_tiers
 
 
 def compute_rate_changes(current_tiers: list[dict], previous_tiers: list[dict] | None) -> list[dict]:
@@ -274,6 +254,7 @@ def compute_rate_changes(current_tiers: list[dict], previous_tiers: list[dict] |
             "min_kwh": tier["min_kwh"],
             "max_kwh": tier["max_kwh"],
             "rate": tier["rate"],
+            "raw_rate": tier["raw_rate"],
             "rate_change": change,
             "rate_change_percent": pct,
             "trend": trend,
@@ -368,8 +349,7 @@ def _parse_single_month(pdf_bytes: bytes) -> dict | None:
             billing_date = _extract_billing_date(main_table)
 
             return {
-                "tiers": computed["tiers"],
-                "rate_kwh": computed["rate_kwh"],
+                "tiers": computed,
                 "billing_date": billing_date,
             }
     except Exception as e:
@@ -440,7 +420,6 @@ def get_meralco_rates() -> dict:
     result["success"] = True
     result["date"] = current_parsed["billing_date"]
     result["data"] = tiers_with_changes
-    result["typical_rate"] = current_parsed["rate_kwh"]
     result["meta"]["source"] = current_url
 
     # Clean up old cached PDFs, keep only current and previous
