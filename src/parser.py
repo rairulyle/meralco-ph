@@ -18,6 +18,11 @@ logger = logging.getLogger(__name__)
 
 PDF_BASE_URL = "https://meralcomain.s3.ap-southeast-1.amazonaws.com"
 
+# Local franchise tax rate (%). Not in the PDF — derived from 5 months of
+# cross-validation against MERALCO's published "typical household" rates.
+# Oct 2025 – Mar 2026 average: 0.4316%, accurate within P0.002/kWh.
+LOCAL_FRANCHISE_TAX_PCT = 0.4316
+
 # Column indices in the PDF table for residential rows
 COL_NAME = 0
 COL_GENERATION = 1
@@ -212,7 +217,8 @@ def compute_effective_rates(tiers: list[dict], vat: dict, consumption_kwh: int =
             + (tier.get("gea_all") or 0)
         )
 
-        rate = round(gen_eff + trans_eff + sl_eff + other_eff + zero_vat, 4)
+        lft_mult = 1 + LOCAL_FRANCHISE_TAX_PCT / 100
+        rate = round((gen_eff + trans_eff + sl_eff + other_eff + zero_vat) * lft_mult, 4)
 
         enriched_tiers.append({
             "name": tier["name"],
@@ -233,9 +239,10 @@ def compute_effective_rates(tiers: list[dict], vat: dict, consumption_kwh: int =
     rate_kwh = None
     if typical_tier:
         raw_tier = tiers[typical_idx]
+        lft_mult = 1 + LOCAL_FRANCHISE_TAX_PCT / 100
         fixed_monthly = (
             (raw_tier["supply_monthly"] or 0) + (raw_tier["metering_monthly"] or 0)
-        ) * other_mult
+        ) * other_mult * lft_mult
         total_bill = typical_tier["rate"] * consumption_kwh + fixed_monthly
         rate_kwh = round(total_bill / consumption_kwh, 4)
 
@@ -350,7 +357,13 @@ def _parse_single_month(pdf_bytes: bytes) -> dict | None:
             if not tiers:
                 return None
 
+            # VAT rates may be in the main table or a separate table
             vat = parse_vat_rates(main_table)
+            if vat["generation"] == 0.0 and len(tables) > 1:
+                for extra_table in tables[1:]:
+                    vat = parse_vat_rates(extra_table)
+                    if vat["generation"] > 0:
+                        break
             computed = compute_effective_rates(tiers, vat, consumption_kwh=200)
             billing_date = _extract_billing_date(main_table)
 

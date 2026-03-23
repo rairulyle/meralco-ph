@@ -136,7 +136,7 @@ rest:
 | `rate_change_percent` | Percentage change from previous month | `4.93` |
 | `trend` | Rate direction: `up`, `down`, or `stable` | `"up"` |
 
-> **Note:** The `/rates/typical` rate includes fixed monthly charges (supply, metering) amortized over 200 kWh, matching how MERALCO computes the "typical household" rate. However, it excludes the local franchise tax (~0.4%), which varies by municipality and is not published in the rate schedule PDF. MERALCO's published rate may be slightly higher due to this tax.
+> **Note:** The `/rates/typical` rate includes fixed monthly charges (supply, metering) amortized over 200 kWh and an estimated local franchise tax (~0.43%), matching MERALCO's published "typical household" rate within P0.01 for most months. The franchise tax is not published in the rate schedule PDF — the estimate is derived from cross-validation against 5 months of MERALCO's published rates.
 
 ---
 

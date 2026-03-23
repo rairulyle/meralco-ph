@@ -115,7 +115,8 @@ class TestComputeEffectiveRates:
         result = compute_effective_rates(tiers, vat, consumption_kwh=200)
 
         assert result["rate_kwh"] is not None
-        assert abs(result["rate_kwh"] - 13.8161) < 0.10
+        # Should match MERALCO's published rate within P0.01
+        assert abs(result["rate_kwh"] - 13.8161) < 0.01
 
     def test_has_all_tiers(self):
         table = _load_fixture_table(FIXTURE_PDF_MAR)
