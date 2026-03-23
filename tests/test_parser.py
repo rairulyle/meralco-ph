@@ -235,21 +235,71 @@ class TestExtractBillingDate:
         assert _extract_billing_date([['', '']]) is None
 
 
+from src.parser import _cleanup_old_pdfs, PDF_CACHE_DIR
+import tempfile
+import shutil
+
+
 class TestDownloadPdf:
+    @patch("src.parser.PDF_CACHE_DIR", new_callable=lambda: property(lambda self: self._tmpdir))
     @patch("src.parser.urllib.request.urlopen")
-    def test_success(self, mock_urlopen):
+    def test_success(self, mock_urlopen, _):
         mock_response = MagicMock()
         mock_response.read.return_value = b"fake pdf content"
         mock_response.__enter__ = lambda s: s
         mock_response.__exit__ = MagicMock(return_value=False)
         mock_urlopen.return_value = mock_response
 
-        assert download_pdf("https://example.com/test.pdf") == b"fake pdf content"
+        with patch("src.parser.PDF_CACHE_DIR", tempfile.mkdtemp()):
+            result = download_pdf("https://example.com/test.pdf")
+            assert result == b"fake pdf content"
 
     @patch("src.parser.urllib.request.urlopen")
     def test_failure_returns_none(self, mock_urlopen):
         mock_urlopen.side_effect = Exception("Network error")
-        assert download_pdf("https://example.com/test.pdf") is None
+        with patch("src.parser.PDF_CACHE_DIR", tempfile.mkdtemp()):
+            assert download_pdf("https://example.com/test.pdf") is None
+
+    @patch("src.parser.urllib.request.urlopen")
+    def test_uses_cache_on_second_call(self, mock_urlopen):
+        mock_response = MagicMock()
+        mock_response.read.return_value = b"pdf data"
+        mock_response.__enter__ = lambda s: s
+        mock_response.__exit__ = MagicMock(return_value=False)
+        mock_urlopen.return_value = mock_response
+
+        tmpdir = tempfile.mkdtemp()
+        try:
+            with patch("src.parser.PDF_CACHE_DIR", tmpdir):
+                download_pdf("https://example.com/test.pdf")
+                download_pdf("https://example.com/test.pdf")
+                # Only downloaded once — second call uses cache
+                assert mock_urlopen.call_count == 1
+        finally:
+            shutil.rmtree(tmpdir)
+
+
+class TestCleanupOldPdfs:
+    def test_removes_old_pdfs(self):
+        tmpdir = tempfile.mkdtemp()
+        try:
+            # Create some cached PDFs
+            for name in ["01-2026_rate_schedule.pdf", "02-2026_rate_schedule.pdf", "03-2026_rate_schedule.pdf"]:
+                with open(os.path.join(tmpdir, name), "w") as f:
+                    f.write("fake")
+
+            with patch("src.parser.PDF_CACHE_DIR", tmpdir):
+                _cleanup_old_pdfs([
+                    "https://example.com/02-2026_rate_schedule.pdf",
+                    "https://example.com/03-2026_rate_schedule.pdf",
+                ])
+
+            remaining = os.listdir(tmpdir)
+            assert "01-2026_rate_schedule.pdf" not in remaining
+            assert "02-2026_rate_schedule.pdf" in remaining
+            assert "03-2026_rate_schedule.pdf" in remaining
+        finally:
+            shutil.rmtree(tmpdir)
 
 
 class TestGetMeralcoRates:

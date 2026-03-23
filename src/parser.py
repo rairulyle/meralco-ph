@@ -7,6 +7,7 @@ electricity rates across all tiers with VAT-inclusive computation.
 
 import io
 import logging
+import os
 import re
 from datetime import datetime
 
@@ -264,15 +265,51 @@ def compute_rate_changes(current_tiers: list[dict], previous_tiers: list[dict] |
     return result
 
 
+PDF_CACHE_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), ".cache", "pdf")
+
+
+def _get_cache_path(url: str) -> str:
+    """Get the local cache file path for a PDF URL."""
+    filename = url.rsplit("/", 1)[-1]
+    return os.path.join(PDF_CACHE_DIR, filename)
+
+
 def download_pdf(url: str) -> bytes | None:
-    """Download PDF from URL, return bytes or None on failure."""
+    """Download PDF from URL with disk caching. Returns bytes or None on failure."""
+    cache_path = _get_cache_path(url)
+
+    # Return cached file if it exists
+    if os.path.exists(cache_path):
+        logger.info("Using cached PDF: %s", cache_path)
+        with open(cache_path, "rb") as f:
+            return f.read()
+
+    # Download and cache
     try:
         logger.info("Downloading PDF: %s", url)
+        os.makedirs(PDF_CACHE_DIR, exist_ok=True)
         with urllib.request.urlopen(url, timeout=30) as response:
-            return response.read()
+            pdf_bytes = response.read()
+        with open(cache_path, "wb") as f:
+            f.write(pdf_bytes)
+        return pdf_bytes
     except Exception as e:
         logger.error("Failed to download PDF from %s: %s", url, e)
         return None
+
+
+def _cleanup_old_pdfs(keep_urls: list[str]) -> None:
+    """Remove cached PDFs that are not in the keep list."""
+    if not os.path.exists(PDF_CACHE_DIR):
+        return
+
+    keep_filenames = {url.rsplit("/", 1)[-1] for url in keep_urls}
+
+    for filename in os.listdir(PDF_CACHE_DIR):
+        if filename.endswith(".pdf") and filename not in keep_filenames:
+            filepath = os.path.join(PDF_CACHE_DIR, filename)
+            logger.info("Cleaning up old cached PDF: %s", filename)
+            os.remove(filepath)
 
 
 def _extract_billing_date(table: list[list]) -> str | None:
@@ -382,6 +419,9 @@ def get_meralco_rates() -> dict:
     result["date"] = current_parsed["billing_date"]
     result["data"] = tiers_with_changes
     result["meta"]["source"] = current_url
+
+    # Clean up old cached PDFs, keep only current and previous
+    _cleanup_old_pdfs([current_url, prev_url])
 
     return result
 
