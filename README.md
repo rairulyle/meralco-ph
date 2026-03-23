@@ -1,12 +1,14 @@
 # ⚡ MERALCO PH - API
 
-Konnichiwassup! This is a REST API that scrapes and provides current MERALCO (Manila Electric Company) electricity rates in the Philippines.
+Konnichiwassup! This is a REST API that provides current MERALCO (Manila Electric Company) electricity rates in the Philippines.
 
-MERALCO is the largest electric distribution utility company in the Philippines, serving Metro Manila and nearby provinces. This API automatically fetches the latest monthly electricity rates from MERALCO's official news and advisories, making it easy to integrate real-time rate data into your Home Assistant setup or any other automation platform.
+MERALCO is the largest electric distribution utility company in the Philippines, serving Metro Manila and nearby provinces. This API automatically parses the latest monthly electricity rates from MERALCO's official rate schedule PDFs, making it easy to integrate real-time rate data into your Home Assistant setup or any other automation platform.
 
 **✨ Features:**
 
-- Automatically detects monthly rate changes (higher/lower rates)
+- All 8 residential rate tiers with VAT-inclusive computation
+- Month-over-month rate changes with trend indicator
+- `/rates/typical` endpoint — the "typical household" rate (200 kWh) that MERALCO publishes in their monthly news articles
 - Caches data to minimize requests (refreshes monthly)
 - Returns previous month's rates if current month is unavailable
 - Lightweight REST API with health check endpoint
@@ -45,8 +47,16 @@ docker run -d -p 5000:5000 --name meralco-ph ghcr.io/rairulyle/meralco-ph:latest
 
 ## 📡 API Endpoints
 
-- `GET /rates` - Returns current electricity rates
-- `GET /health` - Health check
+| Endpoint | Description |
+|----------|-------------|
+| `GET /rates` | All 8 residential tier rates |
+| `GET /rates/typical` | Typical household (200 kWh) rate — this is the same rate MERALCO publishes in their monthly news articles |
+| `GET /rates/<tier>` | Specific tier (e.g. `/rates/101-200`, `/rates/over-400`) |
+| `GET /health` | Health check |
+
+### Valid tier slugs
+
+`0-20`, `21-50`, `51-70`, `71-100`, `101-200`, `201-300`, `301-400`, `over-400`, `typical`
 
 ## 🏠 Home Assistant Integration
 
@@ -54,12 +64,12 @@ Add to `configuration.yaml`:
 
 ```yaml
 rest:
-  - resource: http://localhost:5000/rates
+  - resource: http://localhost:5000/rates/typical
     scan_interval: 86400 # Once per day
     sensor:
       - name: "MERALCO - Rate"
         unit_of_measurement: "PHP/kWh"
-        value_template: "{{ value_json.data.rate_kwh }}"
+        value_template: "{{ value_json.data.rate }}"
       - name: "MERALCO - Rate Change"
         unit_of_measurement: "PHP/kWh"
         value_template: "{{ value_json.data.rate_change }}"
@@ -72,30 +82,65 @@ rest:
 
 ## 📋 Output Format
 
+### `GET /rates` — All tiers
+
 ```json
 {
   "success": true,
-  "url": "https://company.meralco.com.ph/news-and-advisories/lower-rates-december-2025",
-  "data": {
-    "rate_kwh": 13.1145,
-    "rate_change": -0.3557,
-    "rate_change_percent": -2.64,
-    "rate_unit": "PHP/kWh",
-    "trend": "down",
-    "raw_text": "..."
-  },
   "error": null,
-  "timestamp": "2025-12-21T12:00:00"
+  "warning": null,
+  "date": "03/2026",
+  "data": [
+    {
+      "name": "0-20 kWh",
+      "min_kwh": 0,
+      "max_kwh": 20,
+      "rate": 13.7458,
+      "rate_change": 0.6289,
+      "rate_change_percent": 4.80,
+      "trend": "up"
+    },
+    ...
+  ],
+  "meta": {
+    "timestamp": "2026-03-23T17:10:22",
+    "source": "https://meralcomain.s3.ap-southeast-1.amazonaws.com/2026-03/03-2026_rate_schedule.pdf"
+  }
 }
 ```
 
-| Field                 | Description                                      | Example   |
-| --------------------- | ------------------------------------------------ | --------- |
-| `rate_kwh`            | Current electricity rate per kWh                 | `13.1145` |
-| `rate_change`         | Change from previous month (negative = decrease) | `-0.3557` |
-| `rate_change_percent` | Percentage change from previous month            | `-2.64`   |
-| `rate_unit`           | Unit of measurement                              | `PHP/kWh` |
-| `trend`               | Rate direction: `up` or `down`                   | `down`    |
+### `GET /rates/typical` — Single tier
+
+```json
+{
+  "success": true,
+  "error": null,
+  "warning": null,
+  "date": "03/2026",
+  "data": {
+    "name": "101-200 kWh",
+    "min_kwh": 101,
+    "max_kwh": 200,
+    "rate": 13.758,
+    "rate_change": 0.6411,
+    "rate_change_percent": 4.89,
+    "trend": "up"
+  },
+  "meta": {
+    "timestamp": "2026-03-23T17:10:22",
+    "source": "https://meralcomain.s3.ap-southeast-1.amazonaws.com/2026-03/03-2026_rate_schedule.pdf"
+  }
+}
+```
+
+| Field | Description | Example |
+|-------|-------------|---------|
+| `rate` | Current electricity rate per kWh (PHP, incl. VAT) | `13.758` |
+| `rate_change` | Change from previous month (negative = decrease) | `0.6411` |
+| `rate_change_percent` | Percentage change from previous month | `4.89` |
+| `trend` | Rate direction: `up`, `down`, or `stable` | `up` |
+
+> **Note:** The computed rate excludes local franchise tax (~0.4%), which varies by municipality. MERALCO's published "typical household" rate includes this tax and may differ slightly.
 
 ---
 
@@ -125,25 +170,20 @@ docker run -d -p 5000:5000 meralco-ph
 
 ```bash
 pipenv install
-pipenv run playwright install chromium
-pipenv run python api.py
+pipenv run start
 ```
 
-### Using venv
+### Running tests
 
 ```bash
-python3 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-playwright install chromium
-python api.py
+pipenv run test
 ```
 
 ---
 
 ## ⚠️ Disclaimer
 
-This project scrapes publicly available electricity rate announcements from MERALCO's official website for personal/home automation use. It is not affiliated with or endorsed by MERALCO. The API fetches data infrequently (once per month) to minimize server impact. Use responsibly.
+This project parses publicly available electricity rate schedule PDFs from MERALCO's official website for personal/home automation use. It is not affiliated with or endorsed by MERALCO. The API fetches data infrequently (once per month) to minimize server impact. Use responsibly.
 
 ## 📄 License
 
