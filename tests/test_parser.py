@@ -191,6 +191,7 @@ class TestComputeRateChanges:
         for tier in changed:
             assert tier["rate_change"] > 0
             assert tier["rate_change_percent"] > 0
+            assert tier["trend"] == "up"
 
     def test_rate_change_values(self):
         mar_table = _load_fixture_table(FIXTURE_PDF_MAR)
@@ -218,6 +219,7 @@ class TestComputeRateChanges:
         for tier in changed:
             assert tier["rate_change"] is None
             assert tier["rate_change_percent"] is None
+            assert tier["trend"] is None
 
 
 from unittest.mock import patch, MagicMock

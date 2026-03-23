@@ -255,9 +255,11 @@ def compute_rate_changes(current_tiers: list[dict], previous_tiers: list[dict] |
             pct = round((change / prev_rate) * 100, 2) if prev_rate else None
             entry["rate_change"] = change
             entry["rate_change_percent"] = pct
+            entry["trend"] = "up" if change > 0 else "down" if change < 0 else "stable"
         else:
             entry["rate_change"] = None
             entry["rate_change_percent"] = None
+            entry["trend"] = None
         result.append(entry)
     return result
 
