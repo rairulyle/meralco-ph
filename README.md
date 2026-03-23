@@ -8,7 +8,7 @@ MERALCO is the largest electric distribution utility company in the Philippines,
 
 - All 8 residential rate tiers with VAT-inclusive computation
 - Month-over-month rate changes with trend indicator
-- `/rates/typical` endpoint — the "typical household" rate (200 kWh) that MERALCO publishes in their monthly news articles
+- `/rates/typical` endpoint for the 101-200 kWh tier commonly referenced in MERALCO news articles
 - Caches data to minimize requests (refreshes monthly)
 - Returns previous month's rates if current month is unavailable
 - Lightweight REST API with health check endpoint
@@ -50,7 +50,7 @@ docker run -d -p 5000:5000 --name meralco-ph ghcr.io/rairulyle/meralco-ph:latest
 | Endpoint | Description |
 |----------|-------------|
 | `GET /rates` | All 8 residential tier rates |
-| `GET /rates/typical` | Typical household (200 kWh) rate — this is the same rate MERALCO publishes in their monthly news articles |
+| `GET /rates/typical` | Typical household (101-200 kWh) tier rate |
 | `GET /rates/<tier>` | Specific tier (e.g. `/rates/101-200`, `/rates/over-400`) |
 | `GET /health` | Health check |
 
@@ -87,23 +87,21 @@ rest:
 ```json
 {
   "success": true,
-  "error": null,
-  "warning": null,
   "date": "03/2026",
   "data": [
     {
       "name": "0-20 kWh",
       "min_kwh": 0,
       "max_kwh": 20,
-      "rate": 13.7458,
-      "rate_change": 0.6289,
-      "rate_change_percent": 4.80,
+      "rate": 13.6383,
+      "rate_change": 0.6412,
+      "rate_change_percent": 4.93,
       "trend": "up"
     },
     ...
   ],
   "meta": {
-    "timestamp": "2026-03-23T17:10:22",
+    "timestamp": "2026-03-24T02:09:08.653424",
     "source": "https://meralcomain.s3.ap-southeast-1.amazonaws.com/2026-03/03-2026_rate_schedule.pdf"
   }
 }
@@ -114,20 +112,18 @@ rest:
 ```json
 {
   "success": true,
-  "error": null,
-  "warning": null,
   "date": "03/2026",
   "data": {
     "name": "101-200 kWh",
     "min_kwh": 101,
     "max_kwh": 200,
-    "rate": 13.758,
-    "rate_change": 0.6411,
-    "rate_change_percent": 4.89,
+    "rate": 13.6383,
+    "rate_change": 0.6412,
+    "rate_change_percent": 4.93,
     "trend": "up"
   },
   "meta": {
-    "timestamp": "2026-03-23T17:10:22",
+    "timestamp": "2026-03-24T02:09:08.653424",
     "source": "https://meralcomain.s3.ap-southeast-1.amazonaws.com/2026-03/03-2026_rate_schedule.pdf"
   }
 }
@@ -135,12 +131,12 @@ rest:
 
 | Field | Description | Example |
 |-------|-------------|---------|
-| `rate` | Current electricity rate per kWh (PHP, incl. VAT) | `13.758` |
-| `rate_change` | Change from previous month (negative = decrease) | `0.6411` |
-| `rate_change_percent` | Percentage change from previous month | `4.89` |
-| `trend` | Rate direction: `up`, `down`, or `stable` | `up` |
+| `rate` | Current electricity rate per kWh (PHP, incl. VAT) | `13.6383` |
+| `rate_change` | Change from previous month (negative = decrease) | `0.6412` |
+| `rate_change_percent` | Percentage change from previous month | `4.93` |
+| `trend` | Rate direction: `up`, `down`, or `stable` | `"up"` |
 
-> **Note:** The computed rate excludes local franchise tax (~0.4%), which varies by municipality. MERALCO's published "typical household" rate includes this tax and may differ slightly.
+> **Note:** The computed rate excludes local franchise tax (~0.4%) and fixed monthly charges (supply, metering), which are not included in the per-kWh rate. MERALCO's published "typical household" rate includes these and may differ slightly.
 
 ---
 

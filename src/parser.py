@@ -148,14 +148,17 @@ def parse_vat_rates(table: list[list]) -> dict:
         label = (row[0] or '').strip()
         rate_str = (row[1] or '').strip() if len(row) > 1 else ''
 
-        if label == 'Generation' and '%' in rate_str:
-            vat["generation"] = float(rate_str.rstrip('%'))
-        elif label == 'Transmission' and '%' in rate_str:
-            vat["transmission"] = float(rate_str.rstrip('%'))
-        elif label == 'System Loss' and '%' in rate_str:
-            vat["system_loss"] = float(rate_str.rstrip('%'))
-        elif label == 'Other Charges' and '%' in rate_str:
-            vat["other"] = float(rate_str.rstrip('%'))
+        try:
+            if label == 'Generation' and '%' in rate_str:
+                vat["generation"] = float(rate_str.rstrip('%'))
+            elif label == 'Transmission' and '%' in rate_str:
+                vat["transmission"] = float(rate_str.rstrip('%'))
+            elif label == 'System Loss' and '%' in rate_str:
+                vat["system_loss"] = float(rate_str.rstrip('%'))
+            elif label == 'Other Charges' and '%' in rate_str:
+                vat["other"] = float(rate_str.rstrip('%'))
+        except ValueError:
+            logger.warning("Could not parse VAT rate for %s: %s", label, rate_str)
 
     if vat["generation"] == 0.0 or vat["transmission"] == 0.0 or vat["system_loss"] == 0.0:
         logger.warning("Some VAT rates not found in PDF, using defaults: %s", vat)
