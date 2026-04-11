@@ -1,284 +1,85 @@
 """
-MERALCO API - PDF Rate Schedule Parser
+MERALCO API - Residential Bills PDF Parser
 
-Parses the monthly rate schedule PDF from MERALCO to extract residential
-electricity rates across all tiers with VAT-inclusive computation.
+Parses the monthly residential_bills PDF from MERALCO, which contains
+pre-computed per-kWh rates at 15 consumption levels (50, 70, 100, 200, ...,
+5000 kWh). These rates match MERALCO's published "typical household" figure
+1:1 with no VAT math or franchise tax estimation required.
 """
 
 import io
 import logging
 import os
 import re
+import urllib.request
 from datetime import datetime
 
 import pdfplumber
-import urllib.request
 
 logger = logging.getLogger(__name__)
 
 PDF_BASE_URL = "https://meralcomain.s3.ap-southeast-1.amazonaws.com"
 
-# Local franchise tax rate (%). Not in the PDF — derived from 5 months of
-# cross-validation against MERALCO's published "typical household" rates.
-# Oct 2025 – Mar 2026 average: 0.4316%, accurate within P0.002/kWh.
-LOCAL_FRANCHISE_TAX_PCT = 0.4316
-
-# Column indices in the PDF table for residential rows
-COL_NAME = 0
-COL_GENERATION = 1
-COL_TRANSMISSION = 2
-COL_SYSTEM_LOSS = 4
-COL_DISTRIBUTION = 5
-COL_SUPPLY_KWH = 7
-COL_SUPPLY_MONTHLY = 8
-COL_METERING_KWH = 9
-COL_METERING_MONTHLY = 10
-COL_AWAT = 11
-COL_REGULATORY_RESET = 12
-COL_LIFELINE_SUBSIDY = 13
-COL_LIFELINE_DISCOUNT = 14
-COL_SENIOR_CITIZEN = 15
-COL_RPT = 16
-COL_UC_ME_NPC = 17
-COL_UC_ME_RED = 18
-COL_UC_EC = 19
-COL_UC_SD = 20
-COL_FIT_ALL = 21
-COL_GEA_ALL = 22
+PDF_CACHE_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), ".cache", "pdf")
 
 
 def get_pdf_url(target_date: datetime) -> str:
-    """Generate the S3 URL for a month's rate schedule PDF."""
+    """Generate the S3 URL for a month's residential bills PDF."""
     month = f"{target_date.month:02d}"
     year = target_date.year
-    return f"{PDF_BASE_URL}/{year}-{month}/{month}-{year}_rate_schedule.pdf"
+    return f"{PDF_BASE_URL}/{year}-{month}/{month}-{year}_residential_bills.pdf"
 
 
-def _parse_float(value: str | None) -> float | None:
-    """Parse a float from a PDF cell value. Handles parentheses as negative."""
-    if not value or not value.strip():
-        return None
-    value = value.strip().replace(',', '')
-    if value.startswith('(') and value.endswith(')'):
-        return -float(value[1:-1])
-    try:
-        return float(value)
-    except ValueError:
-        return None
+def parse_residential_bills(rows: list[list]) -> list[dict]:
+    """Extract per-kWh rates from the 'For Non-Lifeline Customers' rate section.
 
-
-def _parse_tier_name(raw: str) -> tuple[str, int, int | None]:
-    """Parse tier name into (display_name, min_kwh, max_kwh)."""
-    raw = raw.strip()
-    if raw.startswith("OVER"):
-        match = re.match(r'OVER\s+(\d+)\s+KWH', raw)
-        if not match:
-            logger.warning("Unexpected OVER tier format: %s", raw)
-        limit = int(match.group(1)) if match else 400
-        return f"Over {limit} kWh", limit + 1, None
-    match = re.match(r'(\d+)\s+TO\s+(\d+)\s+KWH', raw)
-    if match:
-        lo, hi = int(match.group(1)), int(match.group(2))
-        return f"{lo}-{hi} kWh", lo, hi
-    return raw, 0, None
-
-
-def _parse_lifeline_discount(value: str | None) -> float | None:
-    """Parse lifeline discount percentage (e.g. '100.00%' -> 100.0)."""
-    if not value or not value.strip():
-        return None
-    value = value.strip().rstrip('%')
-    try:
-        return float(value)
-    except ValueError:
-        return None
-
-
-def parse_residential_tiers(table: list[list]) -> list[dict]:
-    """Extract residential tier data from the main rate schedule table."""
-    tiers = []
-    in_residential = False
-
-    for row in table:
-        label = (row[COL_NAME] or '').strip()
-
-        if label == 'Residential':
-            in_residential = True
-            continue
-
-        if in_residential:
-            if label and 'KWH' not in label.upper() and 'OVER' not in label.upper():
-                break
-
-            if not label:
-                continue
-
-            name, min_kwh, max_kwh = _parse_tier_name(label)
-
-            tier = {
-                "name": name,
-                "min_kwh": min_kwh,
-                "max_kwh": max_kwh,
-                "generation": _parse_float(row[COL_GENERATION]),
-                "transmission": _parse_float(row[COL_TRANSMISSION]),
-                "system_loss": _parse_float(row[COL_SYSTEM_LOSS]),
-                "distribution": _parse_float(row[COL_DISTRIBUTION]),
-                "supply": _parse_float(row[COL_SUPPLY_KWH]),
-                "metering": _parse_float(row[COL_METERING_KWH]),
-                "supply_monthly": _parse_float(row[COL_SUPPLY_MONTHLY]),
-                "metering_monthly": _parse_float(row[COL_METERING_MONTHLY]),
-                "awat": _parse_float(row[COL_AWAT]),
-                "regulatory_reset": _parse_float(row[COL_REGULATORY_RESET]),
-                "lifeline_subsidy": _parse_float(row[COL_LIFELINE_SUBSIDY]),
-                "lifeline_discount_pct": _parse_lifeline_discount(row[COL_LIFELINE_DISCOUNT]),
-                "senior_citizen": _parse_float(row[COL_SENIOR_CITIZEN]),
-                "rpt": _parse_float(row[COL_RPT]),
-                "uc_me_npc": _parse_float(row[COL_UC_ME_NPC]),
-                "uc_me_red": _parse_float(row[COL_UC_ME_RED]),
-                "uc_ec": _parse_float(row[COL_UC_EC]),
-                "uc_sd": _parse_float(row[COL_UC_SD]),
-                "fit_all": _parse_float(row[COL_FIT_ALL]),
-                "gea_all": _parse_float(row[COL_GEA_ALL]),
-            }
-            tiers.append(tier)
-
-    return tiers
-
-
-def parse_vat_rates(table: list[list]) -> dict:
-    """Extract VAT rates from the bottom of the rate schedule table.
-
-    Supports two PDF formats:
-    1. Separate cells per row, e.g. Mar 2026: ['Generation', '11.30%', ...]
-    2. Multi-line cell, e.g. Nov 2025: one big cell with embedded newlines
+    Finds the LAST occurrence of 'For Non-Lifeline Customers' and reads
+    numeric rows that follow until hitting a non-numeric first column.
+    The last column of each row is the final per-kWh rate, which may
+    contain stray whitespace (e.g. '1 3.8161') that must be stripped.
     """
-    vat = {"generation": 0.0, "transmission": 0.0, "system_loss": 0.0, "other": 12.0}
-    label_map = {
-        "generation": r'Generation',
-        "transmission": r'Transmission',
-        "system_loss": r'System\s+Loss',
-        "other": r'Other\s+Charges',
-    }
+    non_lifeline_starts = [
+        i for i, row in enumerate(rows)
+        if row and (row[0] or "").strip() == "For Non-Lifeline Customers"
+    ]
+    if not non_lifeline_starts:
+        return []
 
-    # Format 1: scan for "Label" cell with adjacent "X.XX%" cell
-    for row in table:
-        for i, cell in enumerate(row):
-            if not cell:
-                continue
-            label_text = str(cell).strip()
-            for key, label_re in label_map.items():
-                if re.fullmatch(label_re, label_text, re.IGNORECASE):
-                    # Look in next cells for a percentage
-                    for j in range(i + 1, min(i + 3, len(row))):
-                        next_cell = str(row[j] or '').strip()
-                        m = re.match(r'(\d+(?:\.\d+)?)\s*%', next_cell)
-                        if m:
-                            vat[key] = float(m.group(1))
-                            break
-
-    # Format 2: scan for "Label X.XX%" inline within a cell (multi-line cells)
-    inline_patterns = {k: rf'{v}\s+(\d+(?:\.\d+)?)\s*%' for k, v in label_map.items()}
-    for row in table:
-        for cell in row:
-            if not cell:
-                continue
-            text = str(cell)
-            for key, pattern in inline_patterns.items():
-                if vat[key] == 0.0 or (key == "other" and vat[key] == 12.0):
-                    m = re.search(pattern, text, re.IGNORECASE)
-                    if m:
-                        vat[key] = float(m.group(1))
-
-    if vat["generation"] == 0.0 or vat["transmission"] == 0.0 or vat["system_loss"] == 0.0:
-        logger.warning("Some VAT rates not found in PDF, using defaults: %s", vat)
-
-    return vat
-
-
-def compute_effective_rates(tiers: list[dict], vat: dict, consumption_kwh: int = 200) -> dict:
-    """
-    Compute VAT-inclusive effective rates for each tier and the typical household rate.
-
-    VAT application rules (from the PDF's VAT rates table):
-    - Generation: variable % (e.g. 11.30%, includes franchise tax effect)
-    - Transmission: variable % (e.g. 10.49%)
-    - System Loss: variable % (e.g. 11.17%)
-    - Other Charges (distribution, supply, metering, AWAT, reg reset,
-      lifeline subsidy, senior citizen): 12%
-    - Zero-VAT (RPT, universal charges, FIT-All, GEA-All): 0%
-
-    Note: Excludes local franchise tax (~0.4%), which varies by LGU.
-    """
-    gen_mult = 1 + vat["generation"] / 100
-    trans_mult = 1 + vat["transmission"] / 100
-    sl_mult = 1 + vat["system_loss"] / 100
-    other_mult = 1 + vat["other"] / 100
-
-    enriched_tiers = []
-    for tier in tiers:
-        gen_eff = (tier["generation"] or 0) * gen_mult
-        trans_eff = (tier["transmission"] or 0) * trans_mult
-        sl_eff = (tier["system_loss"] or 0) * sl_mult
-
-        other_per_kwh = (
-            (tier["distribution"] or 0)
-            + (tier["supply"] or 0)
-            + (tier["metering"] or 0)
-            + (tier.get("awat") or 0)
-            + (tier.get("regulatory_reset") or 0)
-            + (tier.get("lifeline_subsidy") or 0)
-            + (tier.get("senior_citizen") or 0)
-        )
-        other_eff = other_per_kwh * other_mult
-
-        zero_vat = (
-            (tier.get("rpt") or 0)
-            + (tier.get("uc_me_npc") or 0)
-            + (tier.get("uc_me_red") or 0)
-            + (tier.get("uc_ec") or 0)
-            + (tier.get("uc_sd") or 0)
-            + (tier.get("fit_all") or 0)
-            + (tier.get("gea_all") or 0)
-        )
-
-        lft_mult = 1 + LOCAL_FRANCHISE_TAX_PCT / 100
-        raw_rate = round(gen_eff + trans_eff + sl_eff + other_eff + zero_vat, 4)
-        rate = round(raw_rate * lft_mult, 4)
-
-        enriched_tiers.append({
-            "name": tier["name"],
-            "min_kwh": tier["min_kwh"],
-            "max_kwh": tier["max_kwh"],
-            "rate": rate,
-            "raw_rate": raw_rate,
-        })
-
-    return enriched_tiers
-
-
-def compute_rate_changes(current_tiers: list[dict], previous_tiers: list[dict] | None) -> list[dict]:
-    """
-    Add rate_change and rate_change_percent to each tier by comparing
-    with previous month's tiers. If previous_tiers is None, changes are null.
-    """
+    start = non_lifeline_starts[-1]
     result = []
-    for i, tier in enumerate(current_tiers):
-        if previous_tiers and i < len(previous_tiers):
-            prev_rate = previous_tiers[i]["rate"]
-            change = round(tier["rate"] - prev_rate, 4)
+    for row in rows[start + 1:]:
+        first = (row[0] or "").strip()
+        if not first.isdigit():
+            break
+        kwh = int(first)
+        last_cell = (row[-1] or "").strip().replace(" ", "").replace(",", "")
+        try:
+            rate = float(last_cell)
+        except ValueError:
+            continue
+        result.append({"kwh": kwh, "rate": rate})
+    return result
+
+
+def compute_rate_changes(current_entries: list[dict], previous_entries: list[dict] | None) -> list[dict]:
+    """Add rate_change, rate_change_percent, and trend to each entry by
+    comparing with the previous month's rate at the same kWh level.
+    """
+    prev_map = {e["kwh"]: e["rate"] for e in (previous_entries or [])}
+    result = []
+    for entry in current_entries:
+        prev_rate = prev_map.get(entry["kwh"])
+        if prev_rate is not None:
+            change = round(entry["rate"] - prev_rate, 4)
             pct = round((change / prev_rate) * 100, 2) if prev_rate else None
             trend = "up" if change > 0 else "down" if change < 0 else "stable"
         else:
             change = None
             pct = None
             trend = None
-
         result.append({
-            "name": tier["name"],
-            "min_kwh": tier["min_kwh"],
-            "max_kwh": tier["max_kwh"],
-            "rate": tier["rate"],
-            "raw_rate": tier["raw_rate"],
+            "kwh": entry["kwh"],
+            "rate": entry["rate"],
             "rate_change": change,
             "rate_change_percent": pct,
             "trend": trend,
@@ -286,11 +87,7 @@ def compute_rate_changes(current_tiers: list[dict], previous_tiers: list[dict] |
     return result
 
 
-PDF_CACHE_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), ".cache", "pdf")
-
-
 def _get_cache_path(url: str) -> str:
-    """Get the local cache file path for a PDF URL."""
     filename = url.rsplit("/", 1)[-1]
     return os.path.join(PDF_CACHE_DIR, filename)
 
@@ -299,13 +96,11 @@ def download_pdf(url: str) -> bytes | None:
     """Download PDF from URL with disk caching. Returns bytes or None on failure."""
     cache_path = _get_cache_path(url)
 
-    # Return cached file if it exists
     if os.path.exists(cache_path):
         logger.info("Using cached PDF: %s", cache_path)
         with open(cache_path, "rb") as f:
             return f.read()
 
-    # Download and cache
     try:
         logger.info("Downloading PDF: %s", url)
         os.makedirs(PDF_CACHE_DIR, exist_ok=True)
@@ -333,61 +128,60 @@ def _cleanup_old_pdfs(keep_urls: list[str]) -> None:
             os.remove(filepath)
 
 
-def _extract_billing_date(table: list[list]) -> str | None:
-    """Extract billing date as MM/YYYY from the table header."""
-    header = (table[0][0] or '') if table and table[0] else ''
-    match = re.search(r'EFFECTIVE\s+(\w+)\s+(\d{4})', header, re.IGNORECASE)
-    if match:
-        from dateutil.parser import parse as parse_date
-        month_name = match.group(1)
-        year = match.group(2)
-        dt = parse_date(f"{month_name} {year}")
-        return f"{dt.month:02d}/{dt.year}"
+MONTH_REGEX = re.compile(
+    r'(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{4})',
+    re.IGNORECASE,
+)
+
+
+def _extract_billing_date(rows: list[list]) -> str | None:
+    """Extract billing date as MM/YYYY from the PDF rows.
+
+    The residential_bills PDF header contains the month name and year,
+    e.g. 'RESIDENTIAL BILLS AT TYPICAL CONSUMPTION LEVELS' / 'April 2026'.
+    """
+    for row in rows:
+        for cell in row:
+            if not cell:
+                continue
+            match = MONTH_REGEX.search(str(cell))
+            if match:
+                from dateutil.parser import parse as parse_date
+                dt = parse_date(f"{match.group(1)} {match.group(2)}")
+                return f"{dt.month:02d}/{dt.year}"
     return None
 
 
 def _parse_single_month(pdf_bytes: bytes) -> dict | None:
-    """Parse a single month's PDF and return tiers with rates, or None on failure."""
+    """Parse a single month's residential_bills PDF, returning entries and billing date."""
     try:
         with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
             if not pdf.pages:
                 return None
-
             tables = pdf.pages[0].extract_tables()
             if not tables:
                 return None
-
-            main_table = tables[0]
-            tiers = parse_residential_tiers(main_table)
-            if not tiers:
+            rows = [row for table in tables for row in table]
+            entries = parse_residential_bills(rows)
+            if not entries:
                 return None
-
-            # VAT rates may be in the main table or a separate table
-            vat = parse_vat_rates(main_table)
-            if vat["generation"] == 0.0 and len(tables) > 1:
-                for extra_table in tables[1:]:
-                    vat = parse_vat_rates(extra_table)
-                    if vat["generation"] > 0:
-                        break
-            computed = compute_effective_rates(tiers, vat, consumption_kwh=200)
-            billing_date = _extract_billing_date(main_table)
-
-            return {
-                "tiers": computed,
-                "billing_date": billing_date,
-            }
+            billing_date = _extract_billing_date(rows)
+            if not billing_date:
+                # Fallback: try the raw page text
+                page_text = pdf.pages[0].extract_text() or ""
+                match = MONTH_REGEX.search(page_text)
+                if match:
+                    from dateutil.parser import parse as parse_date
+                    dt = parse_date(f"{match.group(1)} {match.group(2)}")
+                    billing_date = f"{dt.month:02d}/{dt.year}"
+            return {"entries": entries, "billing_date": billing_date}
     except Exception as e:
         logger.error("Error parsing PDF: %s", e)
         return None
 
 
 def get_meralco_rates() -> dict:
-    """
-    Main function to get current MERALCO electricity rates with rate changes.
-
-    Downloads current and previous month PDFs, computes rates for both,
-    then diffs them for rate_change values.
-    """
+    """Main entry point: fetch current and previous month PDFs, compute rate changes."""
     from dateutil.relativedelta import relativedelta
 
     now = datetime.now()
@@ -403,13 +197,11 @@ def get_meralco_rates() -> dict:
         },
     }
 
-    # Try current month
     current_url = get_pdf_url(now)
     current_bytes = download_pdf(current_url)
     current_parsed = _parse_single_month(current_bytes) if current_bytes else None
 
     if not current_parsed:
-        # Fall back to previous month as "current"
         logger.warning("Current month failed, trying previous month...")
         prev = now - relativedelta(months=1)
         current_url = get_pdf_url(prev)
@@ -424,36 +216,29 @@ def get_meralco_rates() -> dict:
             f"{now.strftime('%B %Y')} rates not yet available. "
             f"Using {prev.strftime('%B %Y')} rates instead."
         )
-
-        # Previous month's previous for rate change
-        prev_prev = prev - relativedelta(months=1)
-        prev_url = get_pdf_url(prev_prev)
+        prev_for_diff = prev - relativedelta(months=1)
     else:
-        # Previous month for rate change
-        prev = now - relativedelta(months=1)
-        prev_url = get_pdf_url(prev)
+        prev_for_diff = now - relativedelta(months=1)
 
-    # Fetch previous month for rate changes
+    prev_url = get_pdf_url(prev_for_diff)
     prev_bytes = download_pdf(prev_url)
     prev_parsed = _parse_single_month(prev_bytes) if prev_bytes else None
-    prev_tiers = prev_parsed["tiers"] if prev_parsed else None
+    prev_entries = prev_parsed["entries"] if prev_parsed else None
 
-    # Compute rate changes
-    tiers_with_changes = compute_rate_changes(current_parsed["tiers"], prev_tiers)
+    entries_with_changes = compute_rate_changes(current_parsed["entries"], prev_entries)
 
     result["success"] = True
     result["date"] = current_parsed["billing_date"]
-    result["data"] = tiers_with_changes
+    result["data"] = entries_with_changes
     result["meta"]["source"] = current_url
 
-    # Clean up old cached PDFs, keep only current and previous
     _cleanup_old_pdfs([current_url, prev_url])
 
     return result
 
 
 def main():
-    """Main entry point for running the parser."""
+    """Main entry point for running the parser standalone."""
     import json
 
     logging.basicConfig(
