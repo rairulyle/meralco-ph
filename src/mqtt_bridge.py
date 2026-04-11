@@ -38,6 +38,31 @@ class RateStateEntry(TypedDict):
     trend: str | None
 
 
+class DeviceBlock(TypedDict):
+    identifiers: list[str]
+    name: str
+    manufacturer: str
+    model: str
+    sw_version: str
+
+
+class DiscoveryPayload(TypedDict, total=False):
+    name: str
+    unique_id: str
+    object_id: str
+    state_topic: str
+    value_template: str
+    availability_topic: str
+    payload_available: str
+    payload_not_available: str
+    device: DeviceBlock
+    icon: str
+    unit_of_measurement: str
+    device_class: str
+    state_class: str
+    suggested_display_precision: int
+
+
 class SensorKind(TypedDict):
     suffix: str
     name: str
@@ -57,7 +82,7 @@ SENSOR_KINDS: list[SensorKind] = [
         "device_class": "monetary",
         "state_class": "measurement",
         "icon": "mdi:flash",
-        "value_template": "{{ value_json.rate }}",
+        "value_template": "{{ value_json.rate | default(none, true) }}",
         "precision": 4,
     },
     {
@@ -67,7 +92,7 @@ SENSOR_KINDS: list[SensorKind] = [
         "device_class": None,
         "state_class": None,
         "icon": "mdi:delta",
-        "value_template": "{{ value_json.rate_change }}",
+        "value_template": "{{ value_json.rate_change | default(none, true) }}",
         "precision": 4,
     },
     {
@@ -77,7 +102,7 @@ SENSOR_KINDS: list[SensorKind] = [
         "device_class": None,
         "state_class": None,
         "icon": "mdi:percent",
-        "value_template": "{{ value_json.rate_change_percent }}",
+        "value_template": "{{ value_json.rate_change_percent | default(none, true) }}",
         "precision": 2,
     },
     {
@@ -87,7 +112,7 @@ SENSOR_KINDS: list[SensorKind] = [
         "device_class": None,
         "state_class": None,
         "icon": "mdi:trending-up",
-        "value_template": "{{ value_json.trend }}",
+        "value_template": "{{ value_json.trend | default(none, true) }}",
         "precision": None,
     },
 ]
@@ -130,7 +155,7 @@ class MeralcoMQTTBridge:
         self._client.on_message = self._on_message
         self._ha_status_topic = f"{discovery_prefix}/status"
 
-    def _device_block(self) -> dict[str, object]:
+    def _device_block(self) -> DeviceBlock:
         return {
             "identifiers": [DEVICE_ID],
             "name": DEVICE_NAME,
@@ -160,9 +185,9 @@ class MeralcoMQTTBridge:
             return kind_name
         return f"{kind_name} ({kwh} kWh)"
 
-    def _build_discovery_payload(self, kwh: int, kind: SensorKind) -> dict[str, object]:
+    def _build_discovery_payload(self, kwh: int, kind: SensorKind) -> DiscoveryPayload:
         unique_id = self._unique_id(kwh, kind["suffix"])
-        payload: dict[str, object] = {
+        payload: DiscoveryPayload = {
             "name": self._sensor_friendly_name(kwh, kind["name"]),
             "unique_id": unique_id,
             "object_id": unique_id,
@@ -215,7 +240,7 @@ class MeralcoMQTTBridge:
         reason_code: ReasonCode,
         properties: Properties | None = None,
     ) -> None:
-        if reason_code == 0:
+        if not reason_code.is_failure:
             logger.info("Connected to MQTT broker at %s:%s", self.host, self.port)
             self._connected = True
             self._client.subscribe(self._ha_status_topic, qos=1)
@@ -269,11 +294,11 @@ class MeralcoMQTTBridge:
 
                 logger.warning("Connect attempt %d timed out", attempt)
                 self._client.loop_stop()
-            except Exception as exc:  # noqa: BLE001
+            except (OSError, ValueError, RuntimeError) as exc:
                 logger.error("Connect attempt %d failed: %s", attempt, exc)
                 try:
                     self._client.loop_stop()
-                except Exception:  # noqa: BLE001
+                except (OSError, RuntimeError):
                     pass
 
             if attempt < retries:
@@ -286,7 +311,7 @@ class MeralcoMQTTBridge:
             self.publish_offline()
             self._client.loop_stop()
             self._client.disconnect()
-        except Exception as exc:  # noqa: BLE001
+        except (OSError, RuntimeError) as exc:
             logger.error("Error during MQTT disconnect: %s", exc)
         finally:
             self._connected = False

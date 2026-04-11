@@ -11,7 +11,7 @@ import logging
 import os
 import signal
 import sys
-import time
+import threading
 import urllib.request
 from pathlib import Path
 from types import FrameType
@@ -51,14 +51,13 @@ _DEFAULTS: AddonConfig = {
     "mqtt_discovery_prefix": "homeassistant",
 }
 
-_running = True
+_stop_event = threading.Event()
 
 
 def _install_signal_handlers() -> None:
     def _handler(signum: int, _frame: FrameType | None) -> None:
-        global _running
         logger.info("Received signal %s, shutting down", signum)
-        _running = False
+        _stop_event.set()
 
     signal.signal(signal.SIGTERM, _handler)
     signal.signal(signal.SIGINT, _handler)
@@ -296,13 +295,17 @@ def main() -> None:
         sys.exit(1)
 
     _install_signal_handlers()
+    _stop_event.clear()
     bridge.publish_online()
     bridge.publish_discovery()
 
     try:
-        while _running:
-            _publish_one_cycle(bridge, config["kwh_levels"])
-            time.sleep(config["scan_interval"])
+        while not _stop_event.is_set():
+            try:
+                _publish_one_cycle(bridge, config["kwh_levels"])
+            except Exception:
+                logger.exception("Unhandled error during publish cycle; continuing")
+            _stop_event.wait(config["scan_interval"])
     finally:
         bridge.disconnect()
 

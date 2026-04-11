@@ -92,6 +92,51 @@ def test_get_mqtt_from_supervisor_returns_none_when_host_missing(
         assert _get_mqtt_from_supervisor() is None
 
 
+def test_get_mqtt_from_env_reads_all_fields(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.addon_main import _get_mqtt_from_env
+
+    monkeypatch.setenv("MQTT_HOST", "broker.local")
+    monkeypatch.setenv("MQTT_PORT", "8883")
+    monkeypatch.setenv("MQTT_USERNAME", "alice")
+    monkeypatch.setenv("MQTT_PASSWORD", "s3cret")
+
+    assert _get_mqtt_from_env() == {
+        "host": "broker.local",
+        "port": 8883,
+        "username": "alice",
+        "password": "s3cret",
+    }
+
+
+def test_get_mqtt_from_env_returns_none_without_host(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.addon_main import _get_mqtt_from_env
+
+    monkeypatch.delenv("MQTT_HOST", raising=False)
+
+    assert _get_mqtt_from_env() is None
+
+
+def test_get_mqtt_from_env_defaults_port_on_bad_value(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.addon_main import _get_mqtt_from_env
+
+    monkeypatch.setenv("MQTT_HOST", "broker.local")
+    monkeypatch.setenv("MQTT_PORT", "not-a-number")
+    monkeypatch.delenv("MQTT_USERNAME", raising=False)
+    monkeypatch.delenv("MQTT_PASSWORD", raising=False)
+
+    creds = _get_mqtt_from_env()
+    assert creds is not None
+    assert creds["port"] == 1883
+    assert creds["username"] is None
+    assert creds["password"] is None
+
+
 def test_main_mqtt_mode_publishes_discovery_and_state(
     clean_supervisor_env: None, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -150,16 +195,15 @@ def test_main_mqtt_mode_publishes_discovery_and_state(
     bridge.connect.return_value = True
     monkeypatch.setattr(addon_main, "MeralcoMQTTBridge", lambda **kwargs: bridge)
 
-    # Run one iteration only by raising on the first sleep call.
-    sleep_calls = {"n": 0}
+    # Run one iteration only: the first wait() trips the stop event and returns.
+    original_wait = addon_main._stop_event.wait
 
-    def fake_sleep(_seconds: float) -> None:
-        sleep_calls["n"] += 1
-        if sleep_calls["n"] >= 1:
-            addon_main._running = False
+    def fake_wait(timeout: float | None = None) -> bool:
+        addon_main._stop_event.set()
+        return original_wait(0)
 
-    monkeypatch.setattr("src.addon_main.time.sleep", fake_sleep)
-    addon_main._running = True
+    monkeypatch.setattr(addon_main._stop_event, "wait", fake_wait)
+    addon_main._stop_event.clear()
 
     addon_main.main()
 

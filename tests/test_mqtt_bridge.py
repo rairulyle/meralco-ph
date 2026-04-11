@@ -1,10 +1,11 @@
 """Tests for the MERALCO MQTT bridge."""
 
 import json
-from typing import cast
 from unittest.mock import MagicMock
 
 import pytest
+
+from src.mqtt_bridge import DeviceBlock, DiscoveryPayload, RateStateEntry
 
 
 @pytest.fixture
@@ -16,7 +17,7 @@ def mock_client(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
     def _client_factory(*args: object, **kwargs: object) -> MagicMock:
         return client
 
-    monkeypatch.setattr("paho.mqtt.client.Client", _client_factory)
+    monkeypatch.setattr("src.mqtt_bridge.mqtt.Client", _client_factory)
     return client
 
 
@@ -75,9 +76,9 @@ def test_publish_discovery_all_suffixed_when_200_not_in_levels(
     assert "homeassistant/sensor/meralco_rate/config" not in discovery_topics
 
 
-def _publish_calls_by_topic(client: MagicMock) -> dict[str, dict[str, object]]:
+def _publish_calls_by_topic(client: MagicMock) -> dict[str, DiscoveryPayload]:
     """Decode all retained config publishes into a topic-keyed dict."""
-    out: dict[str, dict[str, object]] = {}
+    out: dict[str, DiscoveryPayload] = {}
     for call in client.publish.call_args_list:
         topic = call.args[0]
         if not topic.endswith("/config"):
@@ -103,9 +104,10 @@ def test_rate_sensor_discovery_payload_has_expected_fields_unsuffixed(
     assert payload["unit_of_measurement"] == "PHP/kWh"
     assert payload["device_class"] == "monetary"
     assert payload["state_class"] == "measurement"
-    assert payload["value_template"] == "{{ value_json.rate }}"
+    assert payload["value_template"] == "{{ value_json.rate | default(none, true) }}"
     assert payload["suggested_display_precision"] == 4
-    assert cast(dict[str, object], payload["device"])["identifiers"] == ["meralco_ph"]
+    device: DeviceBlock = payload["device"]
+    assert device["identifiers"] == ["meralco_ph"]
     assert payload["availability_topic"] == "meralco/status"
     assert payload["name"] == "Rate"  # no "(200 kWh)" suffix on the friendly name
 
@@ -141,12 +143,12 @@ def test_trend_sensor_omits_unit_and_device_class(
     assert "unit_of_measurement" not in payload
     assert "device_class" not in payload
     assert "state_class" not in payload
-    assert payload["value_template"] == "{{ value_json.trend }}"
+    assert payload["value_template"] == "{{ value_json.trend | default(none, true) }}"
 
 
-def _state_publish_calls(client: MagicMock) -> dict[str, dict[str, object]]:
+def _state_publish_calls(client: MagicMock) -> dict[str, RateStateEntry]:
     """Decode every publish whose topic looks like a state topic."""
-    out: dict[str, dict[str, object]] = {}
+    out: dict[str, RateStateEntry] = {}
     for call in client.publish.call_args_list:
         topic = call.args[0]
         if topic.endswith("/config"):
@@ -162,8 +164,6 @@ def test_publish_state_writes_one_payload_per_kwh(mock_client: MagicMock) -> Non
     from src.mqtt_bridge import MeralcoMQTTBridge
 
     bridge = MeralcoMQTTBridge(host="broker.local", kwh_levels=[200, 300])
-
-    from src.mqtt_bridge import RateStateEntry
 
     rate_data: dict[int, RateStateEntry] = {
         200: {

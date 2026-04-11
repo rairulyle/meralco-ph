@@ -173,3 +173,22 @@ def test_options_file_with_non_object_root_falls_back_to_defaults(
         and ("not" in r.message.lower() or "object" in r.message.lower())
         for r in caplog.records
     )
+
+
+def test_docs_md_kwh_levels_list_matches_valid_kwh_levels() -> None:
+    """DOCS.md lists the accepted kwh_levels inline; keep it in sync with code."""
+    import re
+
+    from src.api import VALID_KWH_LEVELS
+
+    repo_root = Path(__file__).resolve().parent.parent
+    docs = (repo_root / "DOCS.md").read_text()
+
+    match = re.search(r"Valid:\s*([0-9,\s]+?)\.", docs)
+    assert match is not None, "DOCS.md no longer contains a 'Valid: ...' kwh list"
+
+    listed = {int(n) for n in re.findall(r"\d+", match.group(1))}
+    assert listed == set(VALID_KWH_LEVELS), (
+        f"DOCS.md kwh list {sorted(listed)} does not match "
+        f"VALID_KWH_LEVELS {sorted(VALID_KWH_LEVELS)}"
+    )
