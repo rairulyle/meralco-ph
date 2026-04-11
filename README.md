@@ -8,7 +8,7 @@ MERALCO is the largest electric distribution utility company in the Philippines,
 
 - Rates at 15 consumption levels: 50, 70, 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000, 1500, 3000, 5000 kWh
 - Month-over-month rate changes with trend indicator
-- `/rates/typical` endpoint — matches MERALCO's published "typical household" (200 kWh) rate exactly
+- `/rates/typical` endpoint matches MERALCO's published "typical household" (200 kWh) rate exactly
 - Caches data to minimize requests (refreshes monthly)
 - Returns previous month's rates if current month is unavailable
 - Lightweight REST API with health check endpoint
@@ -50,7 +50,7 @@ docker run -d -p 5000:5000 --name meralco-ph ghcr.io/rairulyle/meralco-ph:latest
 | Endpoint             | Description                                                                                                                                                 |
 | -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `GET /rates`         | All 15 consumption levels                                                                                                                                   |
-| `GET /rates/typical` | Typical household (200 kWh) — matches MERALCO's published [article](https://company.meralco.com.ph/news-and-advisories/higher-residential-rates-april-2026) |
+| `GET /rates/typical` | Typical household (200 kWh), matches MERALCO's published [article](https://company.meralco.com.ph/news-and-advisories/higher-residential-rates-april-2026) |
 | `GET /rates/<kwh>`   | Specific consumption level (e.g. `/rates/100`, `/rates/500`)                                                                                                |
 | `GET /health`        | Health check                                                                                                                                                |
 
@@ -105,7 +105,7 @@ rest:
 
 ## 📋 Output Format
 
-### `GET /rates` — All consumption levels
+### `GET /rates`: All consumption levels
 
 ```json
 {
@@ -136,7 +136,7 @@ rest:
 }
 ```
 
-### `GET /rates/typical` — 200 kWh household
+### `GET /rates/typical`: 200 kWh household
 
 ```json
 {

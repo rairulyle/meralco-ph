@@ -26,7 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **BREAKING**: Switched from web scraping to PDF-based rate parsing. Data source is MERALCO's official `residential_bills.pdf` — their own pre-computed bill table containing per-kWh rates at 15 consumption levels
+- **BREAKING**: Switched from web scraping to PDF-based rate parsing. Data source is MERALCO's official `residential_bills.pdf`, their own pre-computed bill table containing per-kWh rates at 15 consumption levels
 - **BREAKING**: API routes now accept kWh consumption levels (`/rates/200`, `/rates/500`, etc.) instead of news article metadata
 - Rates match MERALCO's published "typical household" article
 - New routes: `/rates`, `/rates/typical`, `/rates/<kwh>`
