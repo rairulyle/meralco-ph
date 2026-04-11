@@ -11,7 +11,7 @@ users add or remove other levels.
 import json
 import logging
 import time
-from typing import TypedDict
+from typing import Any, TypedDict
 
 import paho.mqtt.client as mqtt
 from paho.mqtt.enums import CallbackAPIVersion
@@ -115,6 +115,11 @@ class MeralcoMQTTBridge:
             self._availability_topic, payload="offline", qos=1, retain=True
         )
 
+        self._client.on_connect = self._on_connect
+        self._client.on_disconnect = self._on_disconnect
+        self._client.on_message = self._on_message
+        self._ha_status_topic = f"{discovery_prefix}/status"
+
     def _device_block(self) -> dict[str, object]:
         return {
             "identifiers": [DEVICE_ID],
@@ -191,3 +196,84 @@ class MeralcoMQTTBridge:
 
     def publish_offline(self) -> None:
         self._client.publish(self._availability_topic, "offline", qos=1, retain=True)
+
+    def _on_connect(
+        self,
+        client: Any,
+        userdata: Any,
+        flags: Any,
+        reason_code: Any,
+        properties: Any = None,
+    ) -> None:
+        if reason_code == 0:
+            logger.info("Connected to MQTT broker at %s:%s", self.host, self.port)
+            self._connected = True
+            self._client.subscribe(self._ha_status_topic, qos=1)
+        else:
+            logger.error("MQTT connect failed with reason_code=%s", reason_code)
+            self._connected = False
+
+    def _on_disconnect(
+        self,
+        client: Any,
+        userdata: Any,
+        flags: Any,
+        reason_code: Any,
+        properties: Any = None,
+    ) -> None:
+        logger.warning("Disconnected from MQTT broker (reason_code=%s)", reason_code)
+        self._connected = False
+
+    def _on_message(self, client: Any, userdata: Any, msg: Any) -> None:
+        topic = getattr(msg, "topic", "")
+        if topic == self._ha_status_topic:
+            payload_bytes = getattr(msg, "payload", b"")
+            payload = payload_bytes.decode("utf-8", errors="replace")
+            if payload == "online":
+                logger.info("Home Assistant came online, re-publishing discovery")
+                self.publish_discovery()
+
+    def connect(self, timeout: int = 30) -> bool:
+        retries = 3
+        for attempt in range(1, retries + 1):
+            try:
+                logger.info(
+                    "Connecting to MQTT broker %s:%s (attempt %d/%d)",
+                    self.host,
+                    self.port,
+                    attempt,
+                    retries,
+                )
+                self._client.connect(self.host, self.port, keepalive=60)
+                self._client.loop_start()
+
+                deadline = time.time() + timeout
+                while not self._connected and time.time() < deadline:
+                    time.sleep(0.1)
+
+                if self._connected:
+                    return True
+
+                logger.warning("Connect attempt %d timed out", attempt)
+                self._client.loop_stop()
+            except Exception as exc:  # noqa: BLE001
+                logger.error("Connect attempt %d failed: %s", attempt, exc)
+                try:
+                    self._client.loop_stop()
+                except Exception:  # noqa: BLE001
+                    pass
+
+            if attempt < retries:
+                time.sleep(5)
+
+        return False
+
+    def disconnect(self) -> None:
+        try:
+            self.publish_offline()
+            self._client.loop_stop()
+            self._client.disconnect()
+        except Exception as exc:  # noqa: BLE001
+            logger.error("Error during MQTT disconnect: %s", exc)
+        finally:
+            self._connected = False

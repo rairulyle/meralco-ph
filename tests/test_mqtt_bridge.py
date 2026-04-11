@@ -232,3 +232,63 @@ def test_will_set_uses_availability_topic(mock_client: MagicMock) -> None:
     mock_client.will_set.assert_called_once_with(
         "meralco/status", payload="offline", qos=1, retain=True
     )
+
+
+def test_connect_calls_paho_connect_and_loop_start(mock_client: MagicMock) -> None:
+    from src.mqtt_bridge import MeralcoMQTTBridge
+
+    # Simulate the on_connect callback firing immediately by flipping the flag.
+    bridge = MeralcoMQTTBridge(host="broker.local", kwh_levels=[200])
+    bridge._connected = True  # pretend the broker accepted us
+
+    result = bridge.connect(timeout=1)
+
+    assert result is True
+    mock_client.connect.assert_called_once_with("broker.local", 1883, keepalive=60)
+    mock_client.loop_start.assert_called_once()
+
+
+def test_connect_returns_false_after_retries_when_never_connected(
+    mock_client: MagicMock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from src.mqtt_bridge import MeralcoMQTTBridge
+
+    monkeypatch.setattr("time.sleep", lambda _: None)
+
+    bridge = MeralcoMQTTBridge(host="broker.local", kwh_levels=[200])
+    # _connected stays False; broker never sends on_connect.
+
+    result = bridge.connect(timeout=0)
+
+    assert result is False
+    assert mock_client.connect.call_count == 3  # 3 retries
+
+
+def test_on_connect_subscribes_to_ha_status_topic(mock_client: MagicMock) -> None:
+    from src.mqtt_bridge import MeralcoMQTTBridge
+
+    bridge = MeralcoMQTTBridge(host="broker.local", kwh_levels=[200])
+    bridge._on_connect(mock_client, None, {}, 0, None)
+
+    mock_client.subscribe.assert_called_once_with("homeassistant/status", qos=1)
+    assert bridge._connected is True
+
+
+def test_on_message_homeassistant_online_republishes_discovery(
+    mock_client: MagicMock,
+) -> None:
+    from src.mqtt_bridge import MeralcoMQTTBridge
+
+    bridge = MeralcoMQTTBridge(host="broker.local", kwh_levels=[200])
+
+    msg = MagicMock()
+    msg.topic = "homeassistant/status"
+    msg.payload = b"online"
+
+    mock_client.publish.reset_mock()
+    bridge._on_message(mock_client, None, msg)
+
+    discovery_calls = [
+        c for c in mock_client.publish.call_args_list if "/config" in c.args[0]
+    ]
+    assert len(discovery_calls) == 4  # 1 kwh × 4 sensor kinds
