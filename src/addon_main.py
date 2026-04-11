@@ -9,6 +9,7 @@ the REST API.
 import json
 import logging
 import os
+import urllib.request
 from pathlib import Path
 from typing import TypedDict, cast
 
@@ -17,6 +18,13 @@ from src.api import VALID_KWH_LEVELS
 logger = logging.getLogger(__name__)
 
 DEFAULT_OPTIONS_PATH = Path("/data/options.json")
+
+
+class MqttCredentials(TypedDict):
+    host: str
+    port: int
+    username: str | None
+    password: str | None
 
 
 class AddonConfig(TypedDict):
@@ -100,3 +108,64 @@ def _validate_kwh_levels(levels: list[int]) -> list[int]:
                 "Dropping invalid kwh_level=%s (not in VALID_KWH_LEVELS)", level
             )
     return valid
+
+
+def _get_mqtt_from_supervisor() -> MqttCredentials | None:
+    """Fetch MQTT broker credentials from the HA Supervisor service API.
+
+    Returns None if SUPERVISOR_TOKEN is missing, the HTTP call fails,
+    or the response is missing a host field.
+    """
+    token = os.environ.get("SUPERVISOR_TOKEN")
+    if not token:
+        return None
+
+    try:
+        request = urllib.request.Request(
+            "http://supervisor/services/mqtt",
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/json",
+            },
+        )
+        with urllib.request.urlopen(request, timeout=10) as response:
+            raw = response.read()
+    except (OSError, ValueError) as exc:
+        logger.warning("Could not fetch MQTT broker from Supervisor: %s", exc)
+        return None
+
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        logger.warning("Supervisor returned invalid JSON: %s", exc)
+        return None
+
+    if not isinstance(parsed, dict):
+        logger.warning("Supervisor returned non-object root; ignoring")
+        return None
+
+    payload = parsed.get("data")
+    if not isinstance(payload, dict):
+        return None
+
+    host = payload.get("host")
+    if not isinstance(host, str) or not host:
+        return None
+
+    port_value = payload.get("port", 1883)
+    if isinstance(port_value, int):
+        port = port_value
+    elif isinstance(port_value, str) and port_value.isdigit():
+        port = int(port_value)
+    else:
+        port = 1883
+
+    username = payload.get("username")
+    password = payload.get("password")
+
+    return {
+        "host": host,
+        "port": port,
+        "username": username if isinstance(username, str) else None,
+        "password": password if isinstance(password, str) else None,
+    }
