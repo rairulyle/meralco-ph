@@ -6,14 +6,38 @@ from unittest.mock import patch
 
 import pytest
 
-from src.api import app, _cache, clean_response, is_cache_valid, FALLBACK_RETRY_SECONDS
+from src.api import app, _cache, FALLBACK_RETRY_SECONDS
 
 FIXED_NOW = datetime(2026, 6, 15, 12, 0, 0)
+
+MOCK_RATES = {
+    "success": True,
+    "error": None,
+    "warning": None,
+    "date": "03/2026",
+    "data": [
+        {"kwh": 50, "rate": 14.1766, "rate_change": 0.6289, "rate_change_percent": 4.65, "trend": "up"},
+        {"kwh": 70, "rate": 14.0395, "rate_change": 0.6289, "rate_change_percent": 4.69, "trend": "up"},
+        {"kwh": 100, "rate": 13.9364, "rate_change": 0.6289, "rate_change_percent": 4.73, "trend": "up"},
+        {"kwh": 200, "rate": 13.8161, "rate_change": 0.6427, "rate_change_percent": 4.88, "trend": "up"},
+        {"kwh": 300, "rate": 14.1253, "rate_change": 0.6289, "rate_change_percent": 4.66, "trend": "up"},
+        {"kwh": 400, "rate": 14.4348, "rate_change": 0.6289, "rate_change_percent": 4.55, "trend": "up"},
+        {"kwh": 500, "rate": 14.9969, "rate_change": 0.6289, "rate_change_percent": 4.38, "trend": "up"},
+        {"kwh": 600, "rate": 14.9889, "rate_change": 0.6289, "rate_change_percent": 4.38, "trend": "up"},
+        {"kwh": 700, "rate": 14.9902, "rate_change": 0.6289, "rate_change_percent": 4.38, "trend": "up"},
+        {"kwh": 800, "rate": 14.9977, "rate_change": 0.6289, "rate_change_percent": 4.38, "trend": "up"},
+        {"kwh": 900, "rate": 15.0034, "rate_change": 0.6289, "rate_change_percent": 4.38, "trend": "up"},
+        {"kwh": 1000, "rate": 15.0079, "rate_change": 0.6289, "rate_change_percent": 4.38, "trend": "up"},
+        {"kwh": 1500, "rate": 15.0548, "rate_change": 0.6289, "rate_change_percent": 4.38, "trend": "up"},
+        {"kwh": 3000, "rate": 15.1769, "rate_change": 0.6289, "rate_change_percent": 4.38, "trend": "up"},
+        {"kwh": 5000, "rate": 15.2256, "rate_change": 0.6289, "rate_change_percent": 4.38, "trend": "up"},
+    ],
+    "meta": {"timestamp": "2026-06-09T10:00:00", "source": "https://example.com/test.pdf"},
+}
 
 
 @pytest.fixture
 def client():
-    """Create a test client."""
     app.config["TESTING"] = True
     with app.test_client() as client:
         yield client
@@ -21,7 +45,6 @@ def client():
 
 @pytest.fixture(autouse=True)
 def reset_cache():
-    """Reset cache before each test."""
     _cache["data"] = None
     _cache["month"] = None
     _cache["is_fallback"] = False
@@ -34,224 +57,170 @@ def reset_cache():
 
 
 def test_index(client):
-    """Test the index endpoint."""
     response = client.get("/")
     assert response.status_code == 200
     data = json.loads(response.data)
     assert data["service"] == "MERALCO API"
     assert "/rates" in data["endpoints"]
+    assert "/rates/typical" in data["endpoints"]
+    assert "/rates/<kwh>" in data["endpoints"]
 
 
 def test_health(client):
-    """Test the health endpoint."""
     response = client.get("/health")
     assert response.status_code == 200
     data = json.loads(response.data)
     assert data["status"] == "ok"
 
 
-def test_clean_response_removes_null_values():
-    """Test that clean_response removes null values."""
-    data = {
-        "success": True,
-        "error": None,
-        "warning": None,
-        "data": {"rate": 13.1145},
-    }
-    cleaned = clean_response(data)
-    assert "error" not in cleaned
-    assert "warning" not in cleaned
-    assert "success" in cleaned
-    assert "data" in cleaned
-
-
-def test_clean_response_keeps_non_null_values():
-    """Test that clean_response keeps non-null values."""
-    data = {
-        "success": True,
-        "error": None,
-        "warning": "Test warning",
-        "data": {"rate": 13.1145},
-    }
-    cleaned = clean_response(data)
-    assert "error" not in cleaned
-    assert "warning" in cleaned
-    assert cleaned["warning"] == "Test warning"
-
-
-@patch("src.api.datetime")
-def test_is_cache_valid_empty_cache(mock_datetime):
-    """Test cache validation with empty cache."""
-    mock_datetime.now.return_value = FIXED_NOW
-    assert not is_cache_valid()
-
-
-@patch("src.api.datetime")
-def test_is_cache_valid_current_month(mock_datetime):
-    """Test cache validation for current month."""
-    mock_datetime.now.return_value = FIXED_NOW
-    _cache["data"] = {"success": True}
-    _cache["month"] = (2026, 6)
-    assert is_cache_valid()
-
-
-@patch("src.api.datetime")
-def test_is_cache_valid_expired_month(mock_datetime):
-    """Test cache validation for expired month."""
-    mock_datetime.now.return_value = FIXED_NOW
-    _cache["data"] = {"success": True}
-    _cache["month"] = (2026, 5)
-    assert not is_cache_valid()
-
-
 @patch("src.api.datetime")
 @patch("src.api.get_meralco_rates")
-def test_rates_current_month_success(mock_get_rates, mock_datetime, client):
-    """Test /rates endpoint with current month data."""
+def test_rates_returns_all_levels(mock_get_rates, mock_datetime, client):
     mock_datetime.now.return_value = FIXED_NOW
-    mock_get_rates.return_value = {
-        "success": True,
-        "error": None,
-        "warning": None,
-        "data": {"rate_kwh": 13.1145, "trend": "down"},
-        "url": "https://example.com",
-        "timestamp": "2026-06-09T10:00:00",
-    }
+    mock_get_rates.return_value = MOCK_RATES
 
     response = client.get("/rates")
     assert response.status_code == 200
     data = json.loads(response.data)
     assert data["success"] is True
+    assert len(data["data"]) == 15
+    assert data["date"] == "03/2026"
     assert "error" not in data
     assert "warning" not in data
-    assert data["data"]["rate_kwh"] == 13.1145
 
 
 @patch("src.api.datetime")
 @patch("src.api.get_meralco_rates")
-def test_rates_previous_month_cached_with_retry(mock_get_rates, mock_datetime, client):
-    """Test /rates endpoint with previous month data (cached with retry interval)."""
+def test_rates_typical_is_200(mock_get_rates, mock_datetime, client):
     mock_datetime.now.return_value = FIXED_NOW
-    mock_get_rates.return_value = {
-        "success": True,
-        "error": None,
-        "warning": "June 2026 rates not yet available. Using May 2026 rates instead.",
-        "data": {"rate_kwh": 13.1145, "trend": "down"},
-        "url": "https://example.com",
-        "timestamp": "2026-06-09T10:00:00",
-    }
+    mock_get_rates.return_value = MOCK_RATES
 
-    # First request
-    response = client.get("/rates")
+    response = client.get("/rates/typical")
     assert response.status_code == 200
     data = json.loads(response.data)
     assert data["success"] is True
-    assert "warning" in data
+    assert data["data"]["kwh"] == 200
+    assert data["data"]["rate"] == 13.8161
     assert "error" not in data
-
-    # Second request should use cache (not fetch again)
-    response = client.get("/rates")
-    assert mock_get_rates.call_count == 1  # Only called once, cached
+    assert "warning" not in data
 
 
 @patch("src.api.datetime")
 @patch("src.api.get_meralco_rates")
-def test_rates_previous_month_retries_after_interval(mock_get_rates, mock_datetime, client):
-    """Test /rates endpoint retries fetching after fallback retry interval expires."""
+def test_rates_by_kwh(mock_get_rates, mock_datetime, client):
     mock_datetime.now.return_value = FIXED_NOW
-    mock_get_rates.return_value = {
-        "success": True,
-        "error": None,
-        "warning": "June 2026 rates not yet available. Using May 2026 rates instead.",
-        "data": {"rate_kwh": 13.1145, "trend": "down"},
-        "url": "https://example.com",
-        "timestamp": "2026-06-09T10:00:00",
-    }
+    mock_get_rates.return_value = MOCK_RATES
 
-    # First request caches fallback data
-    response = client.get("/rates")
-    assert response.status_code == 200
-    assert mock_get_rates.call_count == 1
-
-    # Simulate cache timestamp expiring
-    _cache["timestamp"] = FIXED_NOW - timedelta(seconds=FALLBACK_RETRY_SECONDS + 1)
-
-    # Next request should retry
-    response = client.get("/rates")
-    assert mock_get_rates.call_count == 2  # Retried after interval
-
-
-@patch("src.api.datetime")
-@patch("src.api.get_meralco_rates")
-def test_rates_current_month_uses_cache(mock_get_rates, mock_datetime, client):
-    """Test /rates endpoint caches current month data."""
-    mock_datetime.now.return_value = FIXED_NOW
-    mock_get_rates.return_value = {
-        "success": True,
-        "error": None,
-        "warning": None,
-        "data": {"rate_kwh": 13.1145, "trend": "down"},
-        "url": "https://example.com",
-        "timestamp": "2026-06-09T10:00:00",
-    }
-
-    # First request
-    response = client.get("/rates")
-    assert response.status_code == 200
-
-    # Second request should use cache
-    response = client.get("/rates")
-    assert response.status_code == 200
-    assert mock_get_rates.call_count == 1  # Only called once
-
-
-@patch("src.api.datetime")
-@patch("src.api.get_meralco_rates")
-def test_rates_both_months_fail_with_stale_cache(mock_get_rates, mock_datetime, client):
-    """Test /rates endpoint when both months fail but stale cache exists."""
-    mock_datetime.now.return_value = FIXED_NOW
-    # First, populate cache with successful data from a previous month
-    _cache["data"] = {
-        "success": True,
-        "error": None,
-        "warning": None,
-        "data": {"rate_kwh": 13.0, "trend": "down"},
-        "url": "https://example.com",
-        "timestamp": "2026-05-01T10:00:00",
-    }
-    _cache["month"] = (2026, 5)
-
-    # Now return failure
-    mock_get_rates.return_value = {
-        "success": False,
-        "error": "Could not find rate information for current or previous month",
-        "warning": None,
-        "data": {},
-    }
-
-    response = client.get("/rates")
+    response = client.get("/rates/200")
     assert response.status_code == 200
     data = json.loads(response.data)
-    assert data["success"] is True  # Returns stale cache
+    assert data["data"]["kwh"] == 200
+    assert data["data"]["rate"] == 13.8161
+
+
+@patch("src.api.datetime")
+@patch("src.api.get_meralco_rates")
+def test_rates_over_400(mock_get_rates, mock_datetime, client):
+    mock_datetime.now.return_value = FIXED_NOW
+    mock_get_rates.return_value = MOCK_RATES
+
+    response = client.get("/rates/500")
+    assert response.status_code == 200
+    data = json.loads(response.data)
+    assert data["data"]["kwh"] == 500
+    assert data["data"]["rate"] == 14.9969
+
+
+@patch("src.api.datetime")
+@patch("src.api.get_meralco_rates")
+def test_rates_invalid_kwh_integer(mock_get_rates, mock_datetime, client):
+    mock_datetime.now.return_value = FIXED_NOW
+    mock_get_rates.return_value = MOCK_RATES
+
+    response = client.get("/rates/999")
+    assert response.status_code == 404
+    data = json.loads(response.data)
+    assert data["success"] is False
+    assert "Consumption level not available" in data["error"]
+    assert data["data"] is None
+
+
+@patch("src.api.datetime")
+@patch("src.api.get_meralco_rates")
+def test_rates_invalid_kwh_nonnumeric(mock_get_rates, mock_datetime, client):
+    mock_datetime.now.return_value = FIXED_NOW
+    mock_get_rates.return_value = MOCK_RATES
+
+    response = client.get("/rates/101-200")
+    assert response.status_code == 404
+    data = json.loads(response.data)
+    assert data["success"] is False
+
+
+@patch("src.api.datetime")
+@patch("src.api.get_meralco_rates")
+def test_rates_caches_current_month(mock_get_rates, mock_datetime, client):
+    mock_datetime.now.return_value = FIXED_NOW
+    mock_get_rates.return_value = MOCK_RATES
+
+    client.get("/rates")
+    client.get("/rates")
+    assert mock_get_rates.call_count == 1
+
+
+@patch("src.api.datetime")
+@patch("src.api.get_meralco_rates")
+def test_rates_fallback_retries_after_interval(mock_get_rates, mock_datetime, client):
+    mock_datetime.now.return_value = FIXED_NOW
+    mock_rates_with_warning = {**MOCK_RATES, "warning": "Using previous month"}
+    mock_get_rates.return_value = mock_rates_with_warning
+
+    client.get("/rates")
+    assert mock_get_rates.call_count == 1
+
+    _cache["timestamp"] = FIXED_NOW - timedelta(seconds=FALLBACK_RETRY_SECONDS + 1)
+    client.get("/rates")
+    assert mock_get_rates.call_count == 2
+
+
+@patch("src.api.datetime")
+@patch("src.api.get_meralco_rates")
+def test_rates_failure_returns_stale_cache(mock_get_rates, mock_datetime, client):
+    mock_datetime.now.return_value = FIXED_NOW
+
+    mock_get_rates.return_value = MOCK_RATES
+    client.get("/rates")
+
+    _cache["month"] = (2026, 5)
+    mock_get_rates.return_value = {
+        "success": False,
+        "error": "Failed",
+        "warning": None,
+        "date": None,
+        "data": None,
+        "meta": {"timestamp": "2026-06-09T10:00:00", "source": None},
+    }
+
+    response = client.get("/rates")
+    data = json.loads(response.data)
+    assert data["success"] is True
     assert "warning" in data
-    assert "temporarily unavailable" in data["warning"]
 
 
 @patch("src.api.datetime")
 @patch("src.api.get_meralco_rates")
 def test_rates_complete_failure_no_cache(mock_get_rates, mock_datetime, client):
-    """Test /rates endpoint when both months fail and no cache exists."""
     mock_datetime.now.return_value = FIXED_NOW
     mock_get_rates.return_value = {
         "success": False,
-        "error": "Could not find rate information for current or previous month",
+        "error": "Could not find rate information",
         "warning": None,
-        "data": {},
+        "date": None,
+        "data": None,
+        "meta": {"timestamp": "2026-06-09T10:00:00", "source": None},
     }
 
     response = client.get("/rates")
-    assert response.status_code == 200
     data = json.loads(response.data)
     assert data["success"] is False
-    assert "error" in data
-    assert "warning" not in data
+    assert data["error"] is not None

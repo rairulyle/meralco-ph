@@ -53,5 +53,8 @@ Thumbs.db
 .env
 .env.local
 
+# PDF cache
+.cache/
+
 # AI agent notes
-docs/thoughts/
+docs/superpowers/

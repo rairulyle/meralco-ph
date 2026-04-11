@@ -4,21 +4,23 @@ For AI agents (Cursor, Copilot, etc.) working in this repo.
 
 ## What this project does
 
-- **MERALCO PH API**: REST API that scrapes current MERALCO (Manila Electric Company) electricity rates from the Philippines and serves them as JSON.
-- Scrapes `https://company.meralco.com.ph/news-and-advisories` rate announcement pages, caches results, and exposes `/rates` and `/health`.
+- **MERALCO PH API**: REST API that parses MERALCO (Manila Electric Company) residential bills PDFs and serves per-kWh rates at each published consumption level.
+- Downloads monthly `residential_bills.pdf` from MERALCO's S3 bucket and extracts the "For Non-Lifeline Customers" per-kWh rate table. Rates match MERALCO's published "typical household" figure 1:1 — no VAT math, no franchise tax estimation.
 - Used for Home Assistant and similar automation; not affiliated with MERALCO.
 
 ## Repo layout
 
 | Path | Purpose |
 |------|---------|
-| `src/scraper.py` | Scraping logic: URL generation, pyppeteer fetch, BeautifulSoup parsing. **URL pattern lives in `get_month_url()`.** |
-| `src/api.py` | Flask app: `/`, `/rates`, `/health`; cache and fallback (current month → previous month). |
+| `src/parser.py` | PDF download, table extraction, residential bills parsing, month diff. **URL pattern lives in `get_pdf_url()`.** |
+| `src/api.py` | Flask app: `/`, `/rates`, `/rates/typical`, `/rates/<kwh>`, `/health`; cache and fallback (current month → previous month). |
 | `src/__init__.py` | Package root; **`__version__`** is defined here. |
-| `tests/test_api.py` | Pytest tests for API and cache behavior (mocked scraper). |
+| `tests/test_parser.py` | Pytest tests for PDF parsing and rate changes (uses real PDF fixtures). |
+| `tests/test_api.py` | Pytest tests for API routes and cache behavior (mocked parser). |
+| `tests/fixtures/` | Real MERALCO residential bills PDFs for testing. |
 | `scripts/bump_version.py` | Bump version in `src/__init__.py` and `src/api.py`. Supports `1.2.0` or `major` / `minor` / `patch`. Does **not** edit CHANGELOG. |
 | `CHANGELOG.md` | Human-maintained; Keep a Changelog style. Update manually when releasing. |
-| `docs/thoughts/` | Local notes (e.g. URL pattern history); **gitignored**. |
+| `docs/thoughts/` | Local notes; **gitignored**. |
 | `Pipfile` | Pipenv deps and scripts: `start`, `test`, `bump`. |
 | `Dockerfile` / `docker-compose.yml` | Run API in container. |
 
@@ -26,7 +28,8 @@ For AI agents (Cursor, Copilot, etc.) working in this repo.
 
 - **Version**: Must be set in both `src/__init__.py` (`__version__`) and `src/api.py` (`"version"` in index response). Use `pipenv run bump patch` (or `minor` / `major` / explicit `1.x.x`).
 - **Changelog**: Updated by hand when releasing; bump script reminds you.
-- **MERALCO URLs**: The site changes URL patterns periodically. When they change, update `get_month_url()` in `src/scraper.py` and optionally note the pattern in `docs/thoughts/` (local only). Current format: `higher-residential-rates-{month}-{year}` and `lower-residential-rates-{month}-{year}` (month lowercase, e.g. `february`).
+- **PDF URL pattern**: `https://meralcomain.s3.ap-southeast-1.amazonaws.com/{YYYY-MM}/{MM-YYYY}_residential_bills.pdf`. If MERALCO changes this pattern, update `get_pdf_url()` in `src/parser.py`.
+- **Valid consumption levels**: `50, 70, 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000, 1500, 3000, 5000` (`typical` aliases `200`). This list is defined in `src/api.py` as `VALID_KWH_LEVELS`.
 
 ## Commands
 
@@ -36,11 +39,11 @@ For AI agents (Cursor, Copilot, etc.) working in this repo.
 
 ## Tech stack
 
-- Python 3.12, Flask, pyppeteer (headless Chromium), BeautifulSoup, python-dateutil.
-- Tests: pytest with mocks; no live scraping in CI.
+- Python 3.12, Flask, pdfplumber (PDF parsing), python-dateutil.
+- Tests: pytest with real PDF fixtures and mocks; no live downloads in CI.
 
-## When changing the scraper
+## When changing the parser
 
-1. URL or HTML structure change → update `src/scraper.py` (`get_month_url()` and/or `parse_rates()`).
+1. PDF URL pattern or table structure change → update `src/parser.py` (`get_pdf_url()` or `parse_residential_bills()`).
 2. Run tests: `pipenv run test`.
 3. If you bump version, run `pipenv run bump patch` (or appropriate part) and update `CHANGELOG.md` manually.

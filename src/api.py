@@ -1,8 +1,9 @@
 """
 MERALCO API - Philippines Electricity Rate API
 
-Provides a REST endpoint for current MERALCO (Manila Electric Company)
-electricity rates in the Philippines.
+Provides REST endpoints for current MERALCO (Manila Electric Company)
+electricity rates, sourced from the official residential_bills.pdf which
+contains MERALCO's pre-computed per-kWh rates at standard consumption levels.
 """
 
 import logging
@@ -10,7 +11,7 @@ import threading
 from datetime import datetime
 
 from flask import Flask, jsonify
-from .scraper import get_meralco_rates
+from .parser import get_meralco_rates
 
 logging.basicConfig(
     level=logging.INFO,
@@ -20,15 +21,18 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
+app.json.sort_keys = False
 
 FALLBACK_RETRY_SECONDS = 3600
 
 _cache = {"data": None, "month": None, "is_fallback": False, "timestamp": None}
 _fetch_lock = threading.Lock()
 
+VALID_KWH_LEVELS = {50, 70, 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000, 1500, 3000, 5000}
+TYPICAL_KWH = 200
 
-def is_cache_valid() -> bool:
-    """Check if cache is valid for the current month."""
+
+def _is_cache_valid() -> bool:
     if not _cache["data"] or not _cache["month"]:
         return False
 
@@ -45,13 +49,58 @@ def is_cache_valid() -> bool:
     return False
 
 
+def _fetch_and_cache() -> dict:
+    """Fetch rates, update cache, and return the raw result."""
+    if _is_cache_valid():
+        return _cache["data"]
+
+    with _fetch_lock:
+        if _is_cache_valid():
+            return _cache["data"]
+
+        logger.info("Cache expired or empty, fetching fresh data...")
+        now = datetime.now()
+        result = get_meralco_rates()
+
+        if result.get("success"):
+            _cache["data"] = result
+            _cache["month"] = (now.year, now.month)
+            _cache["is_fallback"] = bool(result.get("warning"))
+            _cache["timestamp"] = now
+            return result
+
+        logger.warning("Failed to fetch rates: %s", result.get("error"))
+
+        if _cache["data"] and _cache["data"].get("success"):
+            stale = {**_cache["data"]}
+            if not stale.get("warning"):
+                stale["warning"] = "Current rates temporarily unavailable. Using cached values."
+            return stale
+
+        return result
+
+
+def _find_entry(data: list[dict], kwh: int) -> dict | None:
+    for entry in data:
+        if entry["kwh"] == kwh:
+            return entry
+    return None
+
+
+def _clean_response(data: dict) -> dict:
+    """Remove null error and warning fields from response."""
+    return {k: v for k, v in data.items() if not (k in ("error", "warning") and v is None)}
+
+
 @app.route("/")
 def index():
     return jsonify({
         "service": "MERALCO API",
-        "version": "1.1.2",
+        "version": "2.0.0",
         "endpoints": {
-            "/rates": "Get current electricity rates",
+            "/rates": "Get all consumption-level rates",
+            "/rates/typical": "Get typical household (200 kWh) rate",
+            "/rates/<kwh>": "Get rate at a specific consumption level (e.g. /rates/100, /rates/500)",
             "/health": "Health check",
         }
     })
@@ -62,61 +111,61 @@ def health():
     return jsonify({"status": "ok"})
 
 
-def clean_response(data: dict) -> dict:
-    """Remove null values from response."""
-    return {k: v for k, v in data.items() if v is not None}
+def _build_response(result: dict, data) -> dict:
+    """Build a standard success response."""
+    resp = {"success": True, "date": result.get("date"), "data": data, "meta": result.get("meta")}
+    if result.get("warning"):
+        resp["warning"] = result["warning"]
+    return resp
 
 
 @app.route("/rates")
 def rates():
-    """Get current MERALCO electricity rates."""
-    if is_cache_valid():
-        logger.info("Returning cached data for %s-%s",
-                    _cache["month"][0], _cache["month"][1])
-        return jsonify(clean_response(_cache["data"]))
+    result = _fetch_and_cache()
+    if not result.get("success"):
+        return jsonify(_clean_response(result))
+    return jsonify(_build_response(result, result.get("data")))
 
-    with _fetch_lock:
-        if is_cache_valid():
-            logger.info("Returning cached data for %s-%s",
-                        _cache["month"][0], _cache["month"][1])
-            return jsonify(clean_response(_cache["data"]))
 
-        logger.info("Cache expired or empty, fetching fresh data...")
-        now = datetime.now()
-        data = get_meralco_rates()
+@app.route("/rates/<kwh_slug>")
+def rates_by_kwh(kwh_slug):
+    result = _fetch_and_cache()
 
-        if data.get("success"):
-            if data.get("warning"):
-                _cache["data"] = data
-                _cache["month"] = (now.year, now.month)
-                _cache["is_fallback"] = True
-                _cache["timestamp"] = now
-                logger.info(
-                    "Using previous month data - cached with %ds retry interval", FALLBACK_RETRY_SECONDS)
-            else:
-                _cache["data"] = data
-                _cache["month"] = (now.year, now.month)
-                _cache["is_fallback"] = False
-                _cache["timestamp"] = now
-                logger.info(
-                    "Successfully fetched current month rate: %s PHP/kWh", data["data"].get("rate_kwh"))
-            return jsonify(clean_response(data))
+    if not result.get("success"):
+        return jsonify(_clean_response(result))
 
-        logger.warning("Failed to fetch rates: %s", data.get("error"))
+    if kwh_slug == "typical":
+        kwh = TYPICAL_KWH
+    else:
+        try:
+            kwh = int(kwh_slug)
+        except ValueError:
+            kwh = None
 
-        if _cache["data"] and _cache["data"].get("success"):
-            stale_data = _cache["data"].copy()
-            if not stale_data.get("warning"):
-                stale_data["warning"] = "Current rates temporarily unavailable. Using cached values."
-            logger.info("Returning stale cached data from %s-%s",
-                        _cache["month"][0], _cache["month"][1])
-            return jsonify(clean_response(stale_data))
+    if kwh not in VALID_KWH_LEVELS:
+        valid = ", ".join(str(k) for k in sorted(VALID_KWH_LEVELS))
+        return jsonify(_clean_response({
+            "success": False,
+            "error": f"Consumption level not available. Valid: {valid}, typical",
+            "date": result.get("date"),
+            "data": None,
+            "meta": result.get("meta"),
+        })), 404
 
-        return jsonify(clean_response(data))
+    entry = _find_entry(result.get("data", []), kwh)
+    if not entry:
+        return jsonify(_clean_response({
+            "success": False,
+            "error": f"Rate for {kwh} kWh not found in current data",
+            "date": result.get("date"),
+            "data": None,
+            "meta": result.get("meta"),
+        })), 404
+
+    return jsonify(_build_response(result, entry))
 
 
 def main():
-    """Main entry point for running the API server."""
     app.run(host="0.0.0.0", port=5000, debug=True)
 
 

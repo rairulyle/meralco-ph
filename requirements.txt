@@ -1,5 +1,4 @@
-pyppeteer==2.0.0
-beautifulsoup4==4.12.3
+pdfplumber==0.11.6
 flask==3.1.0
 gunicorn==23.0.0
 python-dateutil==2.9.0
