@@ -115,3 +115,61 @@ def test_options_file_takes_precedence_over_env_vars(
     config = read_addon_config(options_path=options_file)
 
     assert config["mode"] == "mqtt"
+
+
+def test_invalid_kwh_levels_are_dropped_with_warning(
+    clean_env: None, tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Levels not in VALID_KWH_LEVELS are dropped and logged."""
+    import logging as _logging
+
+    from src.addon_main import read_addon_config
+
+    options_file = tmp_path / "options.json"
+    options_file.write_text(json.dumps({"kwh_levels": [200, 999, 300, 42]}))
+
+    with caplog.at_level(_logging.WARNING, logger="src.addon_main"):
+        config = read_addon_config(options_path=options_file)
+
+    assert config["kwh_levels"] == [200, 300]
+    assert any("999" in r.message for r in caplog.records)
+    assert any("42" in r.message for r in caplog.records)
+
+
+def test_empty_kwh_levels_after_validation_keeps_empty_list(
+    clean_env: None, tmp_path: Path
+) -> None:
+    """If validation drops everything, return an empty list (caller decides what to do)."""
+    from src.addon_main import read_addon_config
+
+    options_file = tmp_path / "options.json"
+    options_file.write_text(json.dumps({"kwh_levels": [999, 42]}))
+
+    config = read_addon_config(options_path=options_file)
+
+    assert config["kwh_levels"] == []
+
+
+def test_options_file_with_non_object_root_falls_back_to_defaults(
+    clean_env: None, tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Malformed top-level JSON (null/array/scalar) logs a warning and uses defaults."""
+    import logging as _logging
+
+    from src.addon_main import read_addon_config
+
+    options_file = tmp_path / "options.json"
+    options_file.write_text("[1, 2, 3]")
+
+    with caplog.at_level(_logging.WARNING, logger="src.addon_main"):
+        config = read_addon_config(options_path=options_file)
+
+    # Should fall back to defaults, NOT raise TypeError
+    assert config["mode"] == "mqtt"
+    assert config["kwh_levels"] == [200]
+    # Should have logged a warning about the bad shape
+    assert any(
+        "options" in r.message.lower()
+        and ("not" in r.message.lower() or "object" in r.message.lower())
+        for r in caplog.records
+    )
