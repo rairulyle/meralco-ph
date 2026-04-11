@@ -204,3 +204,31 @@ def test_publish_state_skips_levels_not_in_data(mock_client: MagicMock) -> None:
     state_calls = _state_publish_calls(mock_client)
     assert "meralco/state" in state_calls
     assert "meralco/state/300" not in state_calls
+
+
+def test_publish_online_writes_to_availability_topic(mock_client: MagicMock) -> None:
+    from src.mqtt_bridge import MeralcoMQTTBridge
+
+    bridge = MeralcoMQTTBridge(host="broker.local", kwh_levels=[200])
+    bridge.publish_online()
+
+    mock_client.publish.assert_any_call("meralco/status", "online", qos=1, retain=True)
+
+
+def test_publish_offline_writes_to_availability_topic(mock_client: MagicMock) -> None:
+    from src.mqtt_bridge import MeralcoMQTTBridge
+
+    bridge = MeralcoMQTTBridge(host="broker.local", kwh_levels=[200])
+    bridge.publish_offline()
+
+    mock_client.publish.assert_any_call("meralco/status", "offline", qos=1, retain=True)
+
+
+def test_will_set_uses_availability_topic(mock_client: MagicMock) -> None:
+    from src.mqtt_bridge import MeralcoMQTTBridge
+
+    MeralcoMQTTBridge(host="broker.local", kwh_levels=[200])
+
+    mock_client.will_set.assert_called_once_with(
+        "meralco/status", payload="offline", qos=1, retain=True
+    )

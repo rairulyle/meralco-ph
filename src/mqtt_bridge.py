@@ -185,3 +185,9 @@ class MeralcoMQTTBridge:
                 continue
             payload = json.dumps(entry)
             self._client.publish(self._state_topic(kwh), payload, qos=1, retain=True)
+
+    def publish_online(self) -> None:
+        self._client.publish(self._availability_topic, "online", qos=1, retain=True)
+
+    def publish_offline(self) -> None:
+        self._client.publish(self._availability_topic, "offline", qos=1, retain=True)
