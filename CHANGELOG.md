@@ -5,27 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [2.0.2] - 2026-04-11
-
-### Fixed
-
-- s6 `run` script now `cd /app` before exec'ing the Python entry point. The 2.0.1 release switched to s6 services but left the run script without a working-directory change, so `python3 -m src.addon_main` ran from `/` and failed with `ModuleNotFoundError: No module named 'src'` (the `src/` package lives under `/app` per the Dockerfile `WORKDIR`).
-
 ## [2.0.1] - 2026-04-11
 
 ### Fixed
 
-- Home Assistant add-on now installs correctly. The repository was missing `repository.yaml`, which the HA Supervisor requires before it will accept a URL as an add-on store.
-- Add-on no longer crashes on startup with `No MQTT broker available`. The Dockerfile previously used `CMD ["python", "-m", "src.addon_main"]`, which the HA Python base image runs through s6-overlay's `legacy-services` shim. That shim does not source `/var/run/s6/container_environment/`, so `SUPERVISOR_TOKEN` (and the rest of the Supervisor-injected env) was empty inside the Python process and the Supervisor service-discovery API call always returned None. Replaced with a proper `rootfs/etc/services.d/meralco/run` script using `#!/usr/bin/with-contenv bashio`, which loads the container environment file before exec'ing the Python entry point.
-- Declared `hassio_api: true` in `config.yaml` so the Supervisor will inject `SUPERVISOR_TOKEN` for the MQTT service-discovery call (necessary alongside the s6 fix above).
-- Corrected `repository.yaml` `name` field from `MERALCO PH Add-ons` to `MERALCO PH Add-on`.
+- Home Assistant add-on now installs correctly (added missing `repository.yaml`).
+- Add-on no longer crashes on startup with `No MQTT broker available`.
+- Add-on icon (`icon.png`) shown in the HA add-on store.
 
 ### Changed
 
-- Replaced "scrape" wording with "parse" in `DOCS.md`, `config.yaml` description, the `build.yaml` OCI image label, and the HA device `model` field. The 2.0.0 rewrite stopped scraping HTML and started parsing the official `residential_bills.pdf` directly, but the user-facing copy still said "scrape". The CHANGELOG history is left untouched: the historical "switched from web scraping to PDF parsing" entry in 2.0.0 still describes the actual transition accurately.
-- HA device `model` field is now `Residential Bills PDF Parser` (was `Rate Scraper`), matching the existing module docstring in `src/parser.py`.
-- Add-on `name` in `config.yaml` is now `MERALCO PH` (was `MERALCO Electricity Rates`).
-- Added `info`-level log line when `SUPERVISOR_TOKEN` is missing so future debugging can distinguish "no token" from "token present but HTTP call failed".
+- Renamed add-on to `MERALCO PH`.
+- Replaced "scrape" wording with "parse" in user-facing docs and the HA device model field.
 
 ## [2.0.0] - 2026-04-11
 
