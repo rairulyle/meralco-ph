@@ -11,10 +11,13 @@ users add or remove other levels.
 import json
 import logging
 import time
-from typing import Any, TypedDict
+from typing import TypedDict
 
 import paho.mqtt.client as mqtt
+from paho.mqtt.client import Client, ConnectFlags, DisconnectFlags, MQTTMessage
 from paho.mqtt.enums import CallbackAPIVersion
+from paho.mqtt.properties import Properties
+from paho.mqtt.reasoncodes import ReasonCode
 
 from src import __version__
 
@@ -199,11 +202,11 @@ class MeralcoMQTTBridge:
 
     def _on_connect(
         self,
-        client: Any,
-        userdata: Any,
-        flags: Any,
-        reason_code: Any,
-        properties: Any = None,
+        client: Client,
+        userdata: None,
+        connect_flags: ConnectFlags,
+        reason_code: ReasonCode,
+        properties: Properties | None = None,
     ) -> None:
         if reason_code == 0:
             logger.info("Connected to MQTT broker at %s:%s", self.host, self.port)
@@ -215,20 +218,23 @@ class MeralcoMQTTBridge:
 
     def _on_disconnect(
         self,
-        client: Any,
-        userdata: Any,
-        flags: Any,
-        reason_code: Any,
-        properties: Any = None,
+        client: Client,
+        userdata: None,
+        disconnect_flags: DisconnectFlags,
+        reason_code: ReasonCode,
+        properties: Properties | None = None,
     ) -> None:
         logger.warning("Disconnected from MQTT broker (reason_code=%s)", reason_code)
         self._connected = False
 
-    def _on_message(self, client: Any, userdata: Any, msg: Any) -> None:
-        topic = getattr(msg, "topic", "")
-        if topic == self._ha_status_topic:
-            payload_bytes = getattr(msg, "payload", b"")
-            payload = payload_bytes.decode("utf-8", errors="replace")
+    def _on_message(
+        self,
+        client: Client,
+        userdata: None,
+        message: MQTTMessage,
+    ) -> None:
+        if message.topic == self._ha_status_topic:
+            payload = message.payload.decode("utf-8", errors="replace")
             if payload == "online":
                 logger.info("Home Assistant came online, re-publishing discovery")
                 self.publish_discovery()

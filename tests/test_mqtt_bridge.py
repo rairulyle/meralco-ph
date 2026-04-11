@@ -265,10 +265,16 @@ def test_connect_returns_false_after_retries_when_never_connected(
 
 
 def test_on_connect_subscribes_to_ha_status_topic(mock_client: MagicMock) -> None:
+    from paho.mqtt.client import ConnectFlags
+    from paho.mqtt.packettypes import PacketTypes
+    from paho.mqtt.reasoncodes import ReasonCode
+
     from src.mqtt_bridge import MeralcoMQTTBridge
 
     bridge = MeralcoMQTTBridge(host="broker.local", kwh_levels=[200])
-    bridge._on_connect(mock_client, None, {}, 0, None)
+    connect_flags = ConnectFlags(session_present=False)
+    reason_code = ReasonCode(packetType=PacketTypes.CONNACK, aName="Success")
+    bridge._on_connect(mock_client, None, connect_flags, reason_code, None)
 
     mock_client.subscribe.assert_called_once_with("homeassistant/status", qos=1)
     assert bridge._connected is True
