@@ -9,4 +9,5 @@
 
 bashio::log.info "Starting MERALCO Electricity Rates add-on..."
 
+cd /app
 exec python3 -m src.addon_main
