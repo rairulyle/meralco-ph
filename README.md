@@ -13,7 +13,7 @@ MERALCO is the largest electric distribution utility company in the Philippines,
 - Returns previous month's rates if current month is unavailable
 - Lightweight REST API with health check endpoint
 - Docker-ready for easy deployment
-- Home Assistant Add-on (Coming soon)
+- Home Assistant Add-on
 
 ## 🚀 Quick Start (Recommended)
 
@@ -58,14 +58,37 @@ docker run -d -p 5000:5000 --name meralco-ph ghcr.io/rairulyle/meralco-ph:latest
 
 `50`, `70`, `100`, `200`, `300`, `400`, `500`, `600`, `700`, `800`, `900`, `1000`, `1500`, `3000`, `5000`, `typical` (alias for 200)
 
-## 🏠 Home Assistant Integration
+## 🏠 Home Assistant Add-on
 
-Add to `configuration.yaml`:
+Install MERALCO rates as a Home Assistant Supervisor add-on. Two modes:
+
+- `mqtt` (default): Sensors appear automatically via MQTT discovery, no YAML editing required. Needs the Mosquitto broker add-on.
+- `rest`: Run the REST API on port 5000 and consume it via the built-in `rest:` integration.
+
+### Install
+
+1. In Home Assistant, go to Settings, then Add-ons, then Add-on store.
+2. Open the menu in the top-right and choose Repositories.
+3. Add `https://github.com/rairulyle/meralco-ph` and click Add.
+4. Install MERALCO Electricity Rates, configure the options, and start it.
+
+See [DOCS.md](DOCS.md) for the full options reference and a worked example for each mode.
+
+### Sensors created in `mqtt` mode
+
+For each entry in `kwh_levels`, the add-on creates four sensors under one device. The 200 kWh "typical" baseline is always exposed unsuffixed so dashboards stay stable when you add or remove other levels:
+
+- `sensor.meralco_rate`, `sensor.meralco_rate_change`, `sensor.meralco_rate_change_percent`, `sensor.meralco_trend`: always 200 kWh
+- `sensor.meralco_rate_<kwh>kwh`, etc.: for every other level (e.g. `300`, `500`)
+
+### Using the standalone Docker image with `rest:` (existing pattern)
+
+If you prefer to keep running the standalone Docker image instead of the add-on, the existing `rest:` integration still works:
 
 ```yaml
 rest:
   - resource: http://localhost:5000/rates/typical
-    scan_interval: 86400 # Once per day
+    scan_interval: 86400
     sensor:
       - name: "MERALCO - Rate"
         unit_of_measurement: "PHP/kWh"

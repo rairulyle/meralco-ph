@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.0] - 2026-04-11
+
+### Added
+
+- Home Assistant Supervisor add-on. Install via the HA add-on store by adding the repository URL.
+- Two add-on modes: `mqtt` (default, auto-publishes sensors via Home Assistant MQTT discovery) and `rest` (runs the existing Flask API on port 5000 for `rest:` integration users).
+- `kwh_levels` add-on option lets users expose multiple consumption levels as sensors (e.g. `[200, 300]`). Each level publishes four sensors under one device: rate, rate change, rate change percent, and trend. The 200 kWh "typical" baseline is always exposed with unsuffixed entity IDs (`sensor.meralco_rate`, etc.) so existing dashboards stay stable when other levels are added or removed.
+- Auto-discovery of MQTT broker credentials via the Supervisor service API. Users never type broker credentials.
+
+### Changed
+
+- The standalone GHCR image now builds from `Dockerfile.standalone`. The root `Dockerfile` is the HA add-on Dockerfile. The standalone image content and entrypoint are unchanged.
+
+### Notes
+
+- No breaking changes to the standalone Docker image, the Flask API, or any existing endpoints.
+
 ## [2.0.0] - 2026-04-11
 
 ### Changed
