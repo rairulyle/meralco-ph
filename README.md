@@ -6,23 +6,19 @@ MERALCO is the largest electric distribution utility company in the Philippines,
 
 ## ✨ Features
 
+- Home Assistant Add-on
 - Rates at 15 consumption levels: 50, 70, 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000, 1500, 3000, 5000 kWh
 - Month-over-month rate changes with trend indicator
-- `/rates/typical` endpoint matches MERALCO's published "typical household" (200 kWh) rate exactly
 - Caches data to minimize requests (refreshes monthly)
 - Returns previous month's rates if current month is unavailable
 - Lightweight REST API with health check endpoint
 - Docker-ready for easy deployment
-- Home Assistant Add-on
 
 ## 🏠 Home Assistant Add-on (Recommended)
 
 The easiest way to use MERALCO PH with Home Assistant. Install the add-on and sensor entities are created automatically via MQTT discovery, no manual `configuration.yaml` editing needed.
 
-[![Add repository to my Home Assistant][repository-badge]][repository-url]
-
-[repository-badge]: https://my.home-assistant.io/badges/supervisor_add_addon_repository.svg
-[repository-url]: https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2Frairulyle%2Fmeralco-ph
+[Add repository to my Home Assistant](https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2Frairulyle%2Fmeralco-ph)
 
 ### Prerequisites
 
@@ -35,17 +31,12 @@ If you don't have an MQTT broker yet, install the Mosquitto broker add-on first:
 ### Installation
 
 1. Click the **Add repository** button above, or manually add the repository in **Settings → Add-ons → Add-on Store → ⋮ (top right) → Repositories** and paste:
-
-   ```
+  ```
    https://github.com/rairulyle/meralco-ph
-   ```
-
+  ```
 2. Refresh the Add-on Store page, find **MERALCO Electricity Rates**, and click **Install**.
-
 3. Open the **Configuration** tab. Defaults are fine for most users; see [DOCS.md](DOCS.md) for the full options reference.
-
 4. Click **Start** on the **Info** tab.
-
 5. Check **Settings → Devices & Services → MQTT**. A new **MERALCO Electricity Rates** device should appear with sensors for each level in `kwh_levels` (default: 200 kWh).
 
 ### Sensors created
@@ -111,12 +102,14 @@ rest:
 
 ## 📡 API Endpoints
 
-| Endpoint             | Description                                                                                                                                                 |
-| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `GET /rates`         | All 15 consumption levels                                                                                                                                   |
+
+| Endpoint             | Description                                                                                                                                                |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /rates`         | All 15 consumption levels                                                                                                                                  |
 | `GET /rates/typical` | Typical household (200 kWh), matches MERALCO's published [article](https://company.meralco.com.ph/news-and-advisories/higher-residential-rates-april-2026) |
-| `GET /rates/<kwh>`   | Specific consumption level (e.g. `/rates/100`, `/rates/500`)                                                                                                |
-| `GET /health`        | Health check                                                                                                                                                |
+| `GET /rates/<kwh>`   | Specific consumption level (e.g. `/rates/100`, `/rates/500`)                                                                                               |
+| `GET /health`        | Health check                                                                                                                                               |
+
 
 ### Valid consumption levels
 
@@ -175,6 +168,7 @@ rest:
 }
 ```
 
+
 | Field                 | Description                                                      | Example   |
 | --------------------- | ---------------------------------------------------------------- | --------- |
 | `kwh`                 | Consumption level in kWh                                         | `200`     |
@@ -182,6 +176,7 @@ rest:
 | `rate_change`         | Change from previous month (negative = decrease)                 | `0.6427`  |
 | `rate_change_percent` | Percentage change from previous month                            | `4.88`    |
 | `trend`               | Rate direction: `up`, `down`, or `stable`                        | `"up"`    |
+
 
 ## 🔧 Manual Installation
 
