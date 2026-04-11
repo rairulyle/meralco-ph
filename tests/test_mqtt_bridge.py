@@ -1,5 +1,7 @@
 """Tests for the MERALCO MQTT bridge."""
 
+import json
+from typing import cast
 from unittest.mock import MagicMock
 
 import pytest
@@ -71,3 +73,72 @@ def test_publish_discovery_all_suffixed_when_200_not_in_levels(
     assert "homeassistant/sensor/meralco_rate_500kwh/config" in discovery_topics
     # And the unsuffixed variant must NOT appear.
     assert "homeassistant/sensor/meralco_rate/config" not in discovery_topics
+
+
+def _publish_calls_by_topic(client: MagicMock) -> dict[str, dict[str, object]]:
+    """Decode all retained config publishes into a topic-keyed dict."""
+    out: dict[str, dict[str, object]] = {}
+    for call in client.publish.call_args_list:
+        topic = call.args[0]
+        if not topic.endswith("/config"):
+            continue
+        out[topic] = json.loads(call.args[1])
+    return out
+
+
+def test_rate_sensor_discovery_payload_has_expected_fields_unsuffixed(
+    mock_client: MagicMock,
+) -> None:
+    """200 kWh sensor uses unsuffixed unique_id and state topic."""
+    from src.mqtt_bridge import MeralcoMQTTBridge
+
+    bridge = MeralcoMQTTBridge(host="broker.local", kwh_levels=[200])
+    bridge.publish_discovery()
+
+    payloads = _publish_calls_by_topic(mock_client)
+    payload = payloads["homeassistant/sensor/meralco_rate/config"]
+
+    assert payload["unique_id"] == "meralco_rate"
+    assert payload["state_topic"] == "meralco/state"
+    assert payload["unit_of_measurement"] == "PHP/kWh"
+    assert payload["device_class"] == "monetary"
+    assert payload["state_class"] == "measurement"
+    assert payload["value_template"] == "{{ value_json.rate }}"
+    assert payload["suggested_display_precision"] == 4
+    assert cast(dict[str, object], payload["device"])["identifiers"] == ["meralco_ph"]
+    assert payload["availability_topic"] == "meralco/status"
+    assert payload["name"] == "Rate"  # no "(200 kWh)" suffix on the friendly name
+
+
+def test_rate_sensor_discovery_payload_for_non_typical_level(
+    mock_client: MagicMock,
+) -> None:
+    """Non-200 levels use suffixed unique_id and state topic."""
+    from src.mqtt_bridge import MeralcoMQTTBridge
+
+    bridge = MeralcoMQTTBridge(host="broker.local", kwh_levels=[300])
+    bridge.publish_discovery()
+
+    payloads = _publish_calls_by_topic(mock_client)
+    payload = payloads["homeassistant/sensor/meralco_rate_300kwh/config"]
+
+    assert payload["unique_id"] == "meralco_rate_300kwh"
+    assert payload["state_topic"] == "meralco/state/300"
+    assert payload["name"] == "Rate (300 kWh)"
+
+
+def test_trend_sensor_omits_unit_and_device_class(
+    mock_client: MagicMock,
+) -> None:
+    from src.mqtt_bridge import MeralcoMQTTBridge
+
+    bridge = MeralcoMQTTBridge(host="broker.local", kwh_levels=[200])
+    bridge.publish_discovery()
+
+    payloads = _publish_calls_by_topic(mock_client)
+    payload = payloads["homeassistant/sensor/meralco_trend/config"]
+
+    assert "unit_of_measurement" not in payload
+    assert "device_class" not in payload
+    assert "state_class" not in payload
+    assert payload["value_template"] == "{{ value_json.trend }}"
