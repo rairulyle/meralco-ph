@@ -163,7 +163,9 @@ def test_publish_state_writes_one_payload_per_kwh(mock_client: MagicMock) -> Non
 
     bridge = MeralcoMQTTBridge(host="broker.local", kwh_levels=[200, 300])
 
-    rate_data: dict[int, dict[str, object]] = {
+    from src.mqtt_bridge import RateStateEntry
+
+    rate_data: dict[int, RateStateEntry] = {
         200: {
             "rate": 13.8161,
             "rate_change": 0.6427,

@@ -9,11 +9,17 @@ the REST API.
 import json
 import logging
 import os
+import signal
+import sys
+import time
 import urllib.request
 from pathlib import Path
+from types import FrameType
 from typing import TypedDict, cast
 
 from src.api import VALID_KWH_LEVELS
+from src.mqtt_bridge import MeralcoMQTTBridge, RateStateEntry
+from src.parser import MeralcoRatesResult, get_meralco_rates
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +50,18 @@ _DEFAULTS: AddonConfig = {
     "mqtt_topic_prefix": "meralco",
     "mqtt_discovery_prefix": "homeassistant",
 }
+
+_running = True
+
+
+def _install_signal_handlers() -> None:
+    def _handler(signum: int, _frame: FrameType | None) -> None:
+        global _running
+        logger.info("Received signal %s, shutting down", signum)
+        _running = False
+
+    signal.signal(signal.SIGTERM, _handler)
+    signal.signal(signal.SIGINT, _handler)
 
 
 def read_addon_config(options_path: Path = DEFAULT_OPTIONS_PATH) -> AddonConfig:
@@ -169,3 +187,125 @@ def _get_mqtt_from_supervisor() -> MqttCredentials | None:
         "username": username if isinstance(username, str) else None,
         "password": password if isinstance(password, str) else None,
     }
+
+
+def _get_mqtt_from_env() -> MqttCredentials | None:
+    host = os.environ.get("MQTT_HOST")
+    if not host:
+        return None
+
+    port_str = os.environ.get("MQTT_PORT", "1883")
+    try:
+        port = int(port_str)
+    except ValueError:
+        port = 1883
+
+    return {
+        "host": host,
+        "port": port,
+        "username": os.environ.get("MQTT_USERNAME"),
+        "password": os.environ.get("MQTT_PASSWORD"),
+    }
+
+
+def _exec_gunicorn() -> None:
+    logger.info("Starting REST API via gunicorn on :5000")
+    os.execvp(
+        "gunicorn",
+        [
+            "gunicorn",
+            "--bind",
+            "0.0.0.0:5000",
+            "--workers",
+            "1",
+            "--timeout",
+            "120",
+            "src.api:app",
+        ],
+    )
+
+
+def _publish_one_cycle(bridge: MeralcoMQTTBridge, kwh_levels: list[int]) -> None:
+    result: MeralcoRatesResult = get_meralco_rates()
+    if not result.get("success"):
+        logger.warning("Rate fetch failed: %s", result.get("error"))
+        return
+
+    by_kwh: dict[int, RateStateEntry] = {}
+    for entry in result.get("data") or []:
+        kwh = entry.get("kwh")
+        if kwh in kwh_levels:
+            rate = entry.get("rate")
+            rate_change = entry.get("rate_change")
+            rate_change_percent = entry.get("rate_change_percent")
+            trend = entry.get("trend")
+            by_kwh[kwh] = {
+                "rate": rate,
+                "rate_change": rate_change,
+                "rate_change_percent": rate_change_percent,
+                "trend": trend,
+            }
+    bridge.publish_state(by_kwh)
+
+
+def main() -> None:
+    """Add-on entry point."""
+    config = read_addon_config()
+    logging.basicConfig(
+        level=getattr(logging, config["log_level"].upper(), logging.INFO),
+        format="%(asctime)s - %(levelname)s - %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
+    logger.info("Starting MERALCO add-on (mode=%s)", config["mode"])
+
+    if config["mode"] == "rest":
+        _exec_gunicorn()
+        return  # unreachable; execvp replaces the process
+
+    if config["mode"] != "mqtt":
+        logger.error("Unknown mode=%s, exiting", config["mode"])
+        sys.exit(2)
+
+    if not config["kwh_levels"]:
+        logger.error(
+            "kwh_levels is empty after validation. "
+            "Set at least one valid level (e.g. 200) and restart the add-on."
+        )
+        sys.exit(2)
+
+    creds = _get_mqtt_from_supervisor() or _get_mqtt_from_env()
+    if creds is None:
+        logger.error(
+            "No MQTT broker available. Install the Mosquitto add-on or set "
+            "MQTT_HOST/MQTT_PORT/MQTT_USERNAME/MQTT_PASSWORD env vars."
+        )
+        sys.exit(2)
+
+    bridge = MeralcoMQTTBridge(
+        host=creds["host"],
+        port=creds["port"],
+        username=creds["username"],
+        password=creds["password"],
+        topic_prefix=config["mqtt_topic_prefix"],
+        discovery_prefix=config["mqtt_discovery_prefix"],
+        kwh_levels=config["kwh_levels"],
+    )
+
+    if not bridge.connect():
+        logger.error("Failed to connect to MQTT broker after retries")
+        sys.exit(1)
+
+    _install_signal_handlers()
+    bridge.publish_online()
+    bridge.publish_discovery()
+
+    try:
+        while _running:
+            _publish_one_cycle(bridge, config["kwh_levels"])
+            time.sleep(config["scan_interval"])
+    finally:
+        bridge.disconnect()
+
+
+if __name__ == "__main__":
+    main()

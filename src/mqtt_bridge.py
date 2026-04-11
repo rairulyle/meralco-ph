@@ -31,6 +31,13 @@ DEVICE_NAME = "MERALCO Electricity Rates"
 TYPICAL_KWH = 200
 
 
+class RateStateEntry(TypedDict):
+    rate: float | None
+    rate_change: float | None
+    rate_change_percent: float | None
+    trend: str | None
+
+
 class SensorKind(TypedDict):
     suffix: str
     name: str
@@ -184,7 +191,7 @@ class MeralcoMQTTBridge:
                 payload = self._build_discovery_payload(kwh, kind)
                 self._client.publish(topic, json.dumps(payload), qos=1, retain=True)
 
-    def publish_state(self, rate_data: dict[int, dict[str, object]]) -> None:
+    def publish_state(self, rate_data: dict[int, RateStateEntry]) -> None:
         """Publish one JSON payload per configured kWh level present in rate_data."""
         for kwh in self.kwh_levels:
             entry = rate_data.get(kwh)

@@ -90,3 +90,83 @@ def test_get_mqtt_from_supervisor_returns_none_when_host_missing(
 
     with patch("urllib.request.urlopen", return_value=fake_response):
         assert _get_mqtt_from_supervisor() is None
+
+
+def test_main_mqtt_mode_publishes_discovery_and_state(
+    clean_supervisor_env: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from src import addon_main
+
+    # Stub config: mqtt mode, two kwh levels.
+    monkeypatch.setattr(
+        addon_main,
+        "read_addon_config",
+        lambda: {
+            "mode": "mqtt",
+            "log_level": "info",
+            "scan_interval": 86400,
+            "kwh_levels": [200, 300],
+            "mqtt_topic_prefix": "meralco",
+            "mqtt_discovery_prefix": "homeassistant",
+        },
+    )
+
+    # Stub Supervisor: return creds.
+    monkeypatch.setattr(
+        addon_main,
+        "_get_mqtt_from_supervisor",
+        lambda: {
+            "host": "core-mosquitto",
+            "port": 1883,
+            "username": "u",
+            "password": "p",
+        },
+    )
+
+    # Stub the rate fetcher to return one cycle of data, then signal stop.
+    rate_payload = {
+        "success": True,
+        "data": [
+            {
+                "kwh": 200,
+                "rate": 13.8,
+                "rate_change": 0.6,
+                "rate_change_percent": 4.8,
+                "trend": "up",
+            },
+            {
+                "kwh": 300,
+                "rate": 14.5,
+                "rate_change": 0.5,
+                "rate_change_percent": 3.4,
+                "trend": "up",
+            },
+        ],
+    }
+    monkeypatch.setattr(addon_main, "get_meralco_rates", lambda: rate_payload)
+
+    # Stub the bridge so we can introspect calls.
+    bridge = MagicMock()
+    bridge.connect.return_value = True
+    monkeypatch.setattr(addon_main, "MeralcoMQTTBridge", lambda **kwargs: bridge)
+
+    # Run one iteration only by raising on the first sleep call.
+    sleep_calls = {"n": 0}
+
+    def fake_sleep(_seconds: float) -> None:
+        sleep_calls["n"] += 1
+        if sleep_calls["n"] >= 1:
+            addon_main._running = False
+
+    monkeypatch.setattr("src.addon_main.time.sleep", fake_sleep)
+    addon_main._running = True
+
+    addon_main.main()
+
+    bridge.connect.assert_called_once()
+    bridge.publish_online.assert_called_once()
+    bridge.publish_discovery.assert_called_once()
+    bridge.publish_state.assert_called_once()
+    state_arg = bridge.publish_state.call_args.args[0]
+    assert state_arg[200]["rate"] == 13.8
+    assert state_arg[300]["rate"] == 14.5
