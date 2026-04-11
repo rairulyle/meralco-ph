@@ -10,6 +10,10 @@ pdfplumber = "==0.11.6"
 
 [dev-packages]
 pytest = "*"
+ruff = "*"
+mypy = "*"
+pre-commit = "*"
+types-python-dateutil = "*"
 
 [requires]
 python_version = "3.12"

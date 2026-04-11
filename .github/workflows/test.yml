@@ -1,0 +1,35 @@
+name: Test
+
+on:
+  pull_request:
+    branches: [main, dev]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Install pipenv
+        run: pip install pipenv
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pipenv
+
+      - name: Install dependencies
+        run: pipenv sync --dev
+
+      - name: Run pre-commit (ruff + mypy)
+        run: pipenv run pre-commit run --all-files
+
+      - name: Run tests
+        run: pipenv run test

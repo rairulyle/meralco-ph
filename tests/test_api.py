@@ -1,50 +1,146 @@
 """Tests for the MERALCO API."""
 
 import json
+from collections.abc import Iterator
 from datetime import datetime, timedelta
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
+from flask.testing import FlaskClient
 
-from src.api import app, _cache, FALLBACK_RETRY_SECONDS
+from src.api import FALLBACK_RETRY_SECONDS, _cache, app
+from src.parser import MeralcoRatesResult
 
 FIXED_NOW = datetime(2026, 6, 15, 12, 0, 0)
 
-MOCK_RATES = {
+MOCK_RATES: MeralcoRatesResult = {
     "success": True,
     "error": None,
     "warning": None,
     "date": "03/2026",
     "data": [
-        {"kwh": 50, "rate": 14.1766, "rate_change": 0.6289, "rate_change_percent": 4.65, "trend": "up"},
-        {"kwh": 70, "rate": 14.0395, "rate_change": 0.6289, "rate_change_percent": 4.69, "trend": "up"},
-        {"kwh": 100, "rate": 13.9364, "rate_change": 0.6289, "rate_change_percent": 4.73, "trend": "up"},
-        {"kwh": 200, "rate": 13.8161, "rate_change": 0.6427, "rate_change_percent": 4.88, "trend": "up"},
-        {"kwh": 300, "rate": 14.1253, "rate_change": 0.6289, "rate_change_percent": 4.66, "trend": "up"},
-        {"kwh": 400, "rate": 14.4348, "rate_change": 0.6289, "rate_change_percent": 4.55, "trend": "up"},
-        {"kwh": 500, "rate": 14.9969, "rate_change": 0.6289, "rate_change_percent": 4.38, "trend": "up"},
-        {"kwh": 600, "rate": 14.9889, "rate_change": 0.6289, "rate_change_percent": 4.38, "trend": "up"},
-        {"kwh": 700, "rate": 14.9902, "rate_change": 0.6289, "rate_change_percent": 4.38, "trend": "up"},
-        {"kwh": 800, "rate": 14.9977, "rate_change": 0.6289, "rate_change_percent": 4.38, "trend": "up"},
-        {"kwh": 900, "rate": 15.0034, "rate_change": 0.6289, "rate_change_percent": 4.38, "trend": "up"},
-        {"kwh": 1000, "rate": 15.0079, "rate_change": 0.6289, "rate_change_percent": 4.38, "trend": "up"},
-        {"kwh": 1500, "rate": 15.0548, "rate_change": 0.6289, "rate_change_percent": 4.38, "trend": "up"},
-        {"kwh": 3000, "rate": 15.1769, "rate_change": 0.6289, "rate_change_percent": 4.38, "trend": "up"},
-        {"kwh": 5000, "rate": 15.2256, "rate_change": 0.6289, "rate_change_percent": 4.38, "trend": "up"},
+        {
+            "kwh": 50,
+            "rate": 14.1766,
+            "rate_change": 0.6289,
+            "rate_change_percent": 4.65,
+            "trend": "up",
+        },
+        {
+            "kwh": 70,
+            "rate": 14.0395,
+            "rate_change": 0.6289,
+            "rate_change_percent": 4.69,
+            "trend": "up",
+        },
+        {
+            "kwh": 100,
+            "rate": 13.9364,
+            "rate_change": 0.6289,
+            "rate_change_percent": 4.73,
+            "trend": "up",
+        },
+        {
+            "kwh": 200,
+            "rate": 13.8161,
+            "rate_change": 0.6427,
+            "rate_change_percent": 4.88,
+            "trend": "up",
+        },
+        {
+            "kwh": 300,
+            "rate": 14.1253,
+            "rate_change": 0.6289,
+            "rate_change_percent": 4.66,
+            "trend": "up",
+        },
+        {
+            "kwh": 400,
+            "rate": 14.4348,
+            "rate_change": 0.6289,
+            "rate_change_percent": 4.55,
+            "trend": "up",
+        },
+        {
+            "kwh": 500,
+            "rate": 14.9969,
+            "rate_change": 0.6289,
+            "rate_change_percent": 4.38,
+            "trend": "up",
+        },
+        {
+            "kwh": 600,
+            "rate": 14.9889,
+            "rate_change": 0.6289,
+            "rate_change_percent": 4.38,
+            "trend": "up",
+        },
+        {
+            "kwh": 700,
+            "rate": 14.9902,
+            "rate_change": 0.6289,
+            "rate_change_percent": 4.38,
+            "trend": "up",
+        },
+        {
+            "kwh": 800,
+            "rate": 14.9977,
+            "rate_change": 0.6289,
+            "rate_change_percent": 4.38,
+            "trend": "up",
+        },
+        {
+            "kwh": 900,
+            "rate": 15.0034,
+            "rate_change": 0.6289,
+            "rate_change_percent": 4.38,
+            "trend": "up",
+        },
+        {
+            "kwh": 1000,
+            "rate": 15.0079,
+            "rate_change": 0.6289,
+            "rate_change_percent": 4.38,
+            "trend": "up",
+        },
+        {
+            "kwh": 1500,
+            "rate": 15.0548,
+            "rate_change": 0.6289,
+            "rate_change_percent": 4.38,
+            "trend": "up",
+        },
+        {
+            "kwh": 3000,
+            "rate": 15.1769,
+            "rate_change": 0.6289,
+            "rate_change_percent": 4.38,
+            "trend": "up",
+        },
+        {
+            "kwh": 5000,
+            "rate": 15.2256,
+            "rate_change": 0.6289,
+            "rate_change_percent": 4.38,
+            "trend": "up",
+        },
     ],
-    "meta": {"timestamp": "2026-06-09T10:00:00", "source": "https://example.com/test.pdf"},
+    "meta": {
+        "timestamp": "2026-06-09T10:00:00",
+        "source": "https://example.com/test.pdf",
+    },
 }
 
 
 @pytest.fixture
-def client():
+def client() -> Iterator[FlaskClient]:
     app.config["TESTING"] = True
-    with app.test_client() as client:
-        yield client
+    with app.test_client() as c:
+        yield c
 
 
 @pytest.fixture(autouse=True)
-def reset_cache():
+def reset_cache() -> Iterator[None]:
     _cache["data"] = None
     _cache["month"] = None
     _cache["is_fallback"] = False
@@ -56,7 +152,7 @@ def reset_cache():
     _cache["timestamp"] = None
 
 
-def test_index(client):
+def test_index(client: FlaskClient) -> None:
     response = client.get("/")
     assert response.status_code == 200
     data = json.loads(response.data)
@@ -66,7 +162,7 @@ def test_index(client):
     assert "/rates/<kwh>" in data["endpoints"]
 
 
-def test_health(client):
+def test_health(client: FlaskClient) -> None:
     response = client.get("/health")
     assert response.status_code == 200
     data = json.loads(response.data)
@@ -75,7 +171,9 @@ def test_health(client):
 
 @patch("src.api.datetime")
 @patch("src.api.get_meralco_rates")
-def test_rates_returns_all_levels(mock_get_rates, mock_datetime, client):
+def test_rates_returns_all_levels(
+    mock_get_rates: MagicMock, mock_datetime: MagicMock, client: FlaskClient
+) -> None:
     mock_datetime.now.return_value = FIXED_NOW
     mock_get_rates.return_value = MOCK_RATES
 
@@ -91,7 +189,9 @@ def test_rates_returns_all_levels(mock_get_rates, mock_datetime, client):
 
 @patch("src.api.datetime")
 @patch("src.api.get_meralco_rates")
-def test_rates_typical_is_200(mock_get_rates, mock_datetime, client):
+def test_rates_typical_is_200(
+    mock_get_rates: MagicMock, mock_datetime: MagicMock, client: FlaskClient
+) -> None:
     mock_datetime.now.return_value = FIXED_NOW
     mock_get_rates.return_value = MOCK_RATES
 
@@ -107,7 +207,9 @@ def test_rates_typical_is_200(mock_get_rates, mock_datetime, client):
 
 @patch("src.api.datetime")
 @patch("src.api.get_meralco_rates")
-def test_rates_by_kwh(mock_get_rates, mock_datetime, client):
+def test_rates_by_kwh(
+    mock_get_rates: MagicMock, mock_datetime: MagicMock, client: FlaskClient
+) -> None:
     mock_datetime.now.return_value = FIXED_NOW
     mock_get_rates.return_value = MOCK_RATES
 
@@ -120,7 +222,9 @@ def test_rates_by_kwh(mock_get_rates, mock_datetime, client):
 
 @patch("src.api.datetime")
 @patch("src.api.get_meralco_rates")
-def test_rates_over_400(mock_get_rates, mock_datetime, client):
+def test_rates_over_400(
+    mock_get_rates: MagicMock, mock_datetime: MagicMock, client: FlaskClient
+) -> None:
     mock_datetime.now.return_value = FIXED_NOW
     mock_get_rates.return_value = MOCK_RATES
 
@@ -133,7 +237,9 @@ def test_rates_over_400(mock_get_rates, mock_datetime, client):
 
 @patch("src.api.datetime")
 @patch("src.api.get_meralco_rates")
-def test_rates_invalid_kwh_integer(mock_get_rates, mock_datetime, client):
+def test_rates_invalid_kwh_integer(
+    mock_get_rates: MagicMock, mock_datetime: MagicMock, client: FlaskClient
+) -> None:
     mock_datetime.now.return_value = FIXED_NOW
     mock_get_rates.return_value = MOCK_RATES
 
@@ -147,7 +253,9 @@ def test_rates_invalid_kwh_integer(mock_get_rates, mock_datetime, client):
 
 @patch("src.api.datetime")
 @patch("src.api.get_meralco_rates")
-def test_rates_invalid_kwh_nonnumeric(mock_get_rates, mock_datetime, client):
+def test_rates_invalid_kwh_nonnumeric(
+    mock_get_rates: MagicMock, mock_datetime: MagicMock, client: FlaskClient
+) -> None:
     mock_datetime.now.return_value = FIXED_NOW
     mock_get_rates.return_value = MOCK_RATES
 
@@ -159,7 +267,9 @@ def test_rates_invalid_kwh_nonnumeric(mock_get_rates, mock_datetime, client):
 
 @patch("src.api.datetime")
 @patch("src.api.get_meralco_rates")
-def test_rates_caches_current_month(mock_get_rates, mock_datetime, client):
+def test_rates_caches_current_month(
+    mock_get_rates: MagicMock, mock_datetime: MagicMock, client: FlaskClient
+) -> None:
     mock_datetime.now.return_value = FIXED_NOW
     mock_get_rates.return_value = MOCK_RATES
 
@@ -170,9 +280,14 @@ def test_rates_caches_current_month(mock_get_rates, mock_datetime, client):
 
 @patch("src.api.datetime")
 @patch("src.api.get_meralco_rates")
-def test_rates_fallback_retries_after_interval(mock_get_rates, mock_datetime, client):
+def test_rates_fallback_retries_after_interval(
+    mock_get_rates: MagicMock, mock_datetime: MagicMock, client: FlaskClient
+) -> None:
     mock_datetime.now.return_value = FIXED_NOW
-    mock_rates_with_warning = {**MOCK_RATES, "warning": "Using previous month"}
+    mock_rates_with_warning: MeralcoRatesResult = {
+        **MOCK_RATES,
+        "warning": "Using previous month",
+    }
     mock_get_rates.return_value = mock_rates_with_warning
 
     client.get("/rates")
@@ -185,7 +300,9 @@ def test_rates_fallback_retries_after_interval(mock_get_rates, mock_datetime, cl
 
 @patch("src.api.datetime")
 @patch("src.api.get_meralco_rates")
-def test_rates_failure_returns_stale_cache(mock_get_rates, mock_datetime, client):
+def test_rates_failure_returns_stale_cache(
+    mock_get_rates: MagicMock, mock_datetime: MagicMock, client: FlaskClient
+) -> None:
     mock_datetime.now.return_value = FIXED_NOW
 
     mock_get_rates.return_value = MOCK_RATES
@@ -209,7 +326,9 @@ def test_rates_failure_returns_stale_cache(mock_get_rates, mock_datetime, client
 
 @patch("src.api.datetime")
 @patch("src.api.get_meralco_rates")
-def test_rates_complete_failure_no_cache(mock_get_rates, mock_datetime, client):
+def test_rates_complete_failure_no_cache(
+    mock_get_rates: MagicMock, mock_datetime: MagicMock, client: FlaskClient
+) -> None:
     mock_datetime.now.return_value = FIXED_NOW
     mock_get_rates.return_value = {
         "success": False,

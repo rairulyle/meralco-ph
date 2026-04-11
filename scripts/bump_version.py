@@ -70,5 +70,7 @@ if __name__ == "__main__":
     elif VERSION_RE.match(arg):
         version = arg
     else:
-        sys.exit(f"Invalid argument: {arg!r}. Use a version (e.g. 1.2.0) or major|minor|patch")
+        sys.exit(
+            f"Invalid argument: {arg!r}. Use a version (e.g. 1.2.0) or major|minor|patch"
+        )
     apply_version(version)

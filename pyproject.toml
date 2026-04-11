@@ -1,0 +1,5 @@
+[tool.mypy]
+python_version = "3.12"
+strict = true
+mypy_path = "stubs"
+files = ["src", "tests", "scripts"]
