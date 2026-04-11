@@ -2,7 +2,8 @@
 MERALCO API - Philippines Electricity Rate API
 
 Provides REST endpoints for current MERALCO (Manila Electric Company)
-electricity rates in the Philippines, parsed from official rate schedule PDFs.
+electricity rates, sourced from the official residential_bills.pdf which
+contains MERALCO's pre-computed per-kWh rates at standard consumption levels.
 """
 
 import logging
@@ -27,18 +28,8 @@ FALLBACK_RETRY_SECONDS = 3600
 _cache = {"data": None, "month": None, "is_fallback": False, "timestamp": None}
 _fetch_lock = threading.Lock()
 
-# Map tier slugs to tier names
-TIER_SLUG_MAP = {
-    "0-20": "0-20 kWh",
-    "21-50": "21-50 kWh",
-    "51-70": "51-70 kWh",
-    "71-100": "71-100 kWh",
-    "101-200": "101-200 kWh",
-    "201-300": "201-300 kWh",
-    "301-400": "301-400 kWh",
-    "over-400": "Over 400 kWh",
-    "typical": "101-200 kWh",
-}
+VALID_KWH_LEVELS = {50, 70, 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000, 1500, 3000, 5000}
+TYPICAL_KWH = 200
 
 
 def _is_cache_valid() -> bool:
@@ -89,10 +80,10 @@ def _fetch_and_cache() -> dict:
         return result
 
 
-def _find_tier(data: list[dict], tier_name: str) -> dict | None:
-    for tier in data:
-        if tier["name"] == tier_name:
-            return tier
+def _find_entry(data: list[dict], kwh: int) -> dict | None:
+    for entry in data:
+        if entry["kwh"] == kwh:
+            return entry
     return None
 
 
@@ -105,11 +96,11 @@ def _clean_response(data: dict) -> dict:
 def index():
     return jsonify({
         "service": "MERALCO API",
-        "version": "2.0.0",
+        "version": "2.1.0",
         "endpoints": {
-            "/rates": "Get all residential tier rates",
+            "/rates": "Get all consumption-level rates",
             "/rates/typical": "Get typical household (200 kWh) rate",
-            "/rates/<tier>": "Get rate for a specific tier (e.g. /rates/101-200, /rates/over-400)",
+            "/rates/<kwh>": "Get rate at a specific consumption level (e.g. /rates/100, /rates/500)",
             "/health": "Health check",
         }
     })
@@ -120,8 +111,8 @@ def health():
     return jsonify({"status": "ok"})
 
 
-def _tier_response(result: dict, data) -> dict:
-    """Build a standard tier response."""
+def _build_response(result: dict, data) -> dict:
+    """Build a standard success response."""
     resp = {"success": True, "date": result.get("date"), "data": data, "meta": result.get("meta")}
     if result.get("warning"):
         resp["warning"] = result["warning"]
@@ -133,29 +124,45 @@ def rates():
     result = _fetch_and_cache()
     if not result.get("success"):
         return jsonify(_clean_response(result))
-    return jsonify(_tier_response(result, result.get("data")))
+    return jsonify(_build_response(result, result.get("data")))
 
 
-@app.route("/rates/<tier_slug>")
-def rates_by_tier(tier_slug):
+@app.route("/rates/<kwh_slug>")
+def rates_by_kwh(kwh_slug):
     result = _fetch_and_cache()
 
     if not result.get("success"):
         return jsonify(_clean_response(result))
 
-    tier_name = TIER_SLUG_MAP.get(tier_slug)
-    tier = _find_tier(result.get("data", []), tier_name) if tier_name else None
+    if kwh_slug == "typical":
+        kwh = TYPICAL_KWH
+    else:
+        try:
+            kwh = int(kwh_slug)
+        except ValueError:
+            kwh = None
 
-    if not tier:
+    if kwh not in VALID_KWH_LEVELS:
+        valid = ", ".join(str(k) for k in sorted(VALID_KWH_LEVELS))
         return jsonify(_clean_response({
             "success": False,
-            "error": "Tier not found",
+            "error": f"Consumption level not available. Valid: {valid}, typical",
             "date": result.get("date"),
             "data": None,
             "meta": result.get("meta"),
         })), 404
 
-    return jsonify(_tier_response(result, tier))
+    entry = _find_entry(result.get("data", []), kwh)
+    if not entry:
+        return jsonify(_clean_response({
+            "success": False,
+            "error": f"Rate for {kwh} kWh not found in current data",
+            "date": result.get("date"),
+            "data": None,
+            "meta": result.get("meta"),
+        })), 404
+
+    return jsonify(_build_response(result, entry))
 
 
 def main():
