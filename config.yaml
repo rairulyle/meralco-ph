@@ -1,5 +1,5 @@
 name: MERALCO Electricity Rates
-version: "2.1.0"
+version: "2.0.0"
 slug: meralco-ph
 description: Scrapes MERALCO electricity rates and exposes them via MQTT discovery or REST API.
 url: "https://github.com/rairulyle/meralco-ph"
