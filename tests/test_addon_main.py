@@ -170,3 +170,97 @@ def test_main_mqtt_mode_publishes_discovery_and_state(
     state_arg = bridge.publish_state.call_args.args[0]
     assert state_arg[200]["rate"] == 13.8
     assert state_arg[300]["rate"] == 14.5
+
+
+def test_main_rest_mode_execs_gunicorn(
+    clean_supervisor_env: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from src import addon_main
+
+    monkeypatch.setattr(
+        addon_main,
+        "read_addon_config",
+        lambda: {
+            "mode": "rest",
+            "log_level": "info",
+            "scan_interval": 86400,
+            "kwh_levels": [200],
+            "mqtt_topic_prefix": "meralco",
+            "mqtt_discovery_prefix": "homeassistant",
+        },
+    )
+
+    captured: dict[str, str | list[str]] = {}
+
+    def fake_execvp(file: str, args: list[str]) -> None:
+        captured["file"] = file
+        captured["args"] = args
+
+    monkeypatch.setattr("os.execvp", fake_execvp)
+
+    addon_main.main()
+
+    assert captured["file"] == "gunicorn"
+    assert captured["args"] == [
+        "gunicorn",
+        "--bind",
+        "0.0.0.0:5000",
+        "--workers",
+        "1",
+        "--timeout",
+        "120",
+        "src.api:app",
+    ]
+
+
+def test_main_mqtt_mode_exits_when_no_broker_credentials(
+    clean_supervisor_env: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from src import addon_main
+
+    monkeypatch.setattr(
+        addon_main,
+        "read_addon_config",
+        lambda: {
+            "mode": "mqtt",
+            "log_level": "info",
+            "scan_interval": 86400,
+            "kwh_levels": [200],
+            "mqtt_topic_prefix": "meralco",
+            "mqtt_discovery_prefix": "homeassistant",
+        },
+    )
+    monkeypatch.setattr(addon_main, "_get_mqtt_from_supervisor", lambda: None)
+    # Ensure env vars are clean (clean_supervisor_env handles SUPERVISOR_TOKEN
+    # but not the MQTT_* fallback set).
+    for key in ("MQTT_HOST", "MQTT_PORT", "MQTT_USERNAME", "MQTT_PASSWORD"):
+        monkeypatch.delenv(key, raising=False)
+
+    with pytest.raises(SystemExit) as excinfo:
+        addon_main.main()
+
+    assert excinfo.value.code == 2
+
+
+def test_main_mqtt_mode_exits_when_kwh_levels_empty(
+    clean_supervisor_env: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from src import addon_main
+
+    monkeypatch.setattr(
+        addon_main,
+        "read_addon_config",
+        lambda: {
+            "mode": "mqtt",
+            "log_level": "info",
+            "scan_interval": 86400,
+            "kwh_levels": [],
+            "mqtt_topic_prefix": "meralco",
+            "mqtt_discovery_prefix": "homeassistant",
+        },
+    )
+
+    with pytest.raises(SystemExit) as excinfo:
+        addon_main.main()
+
+    assert excinfo.value.code == 2
