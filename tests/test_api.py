@@ -267,6 +267,24 @@ def test_rates_invalid_kwh_nonnumeric(
 
 @patch("src.api.datetime")
 @patch("src.api.get_meralco_rates")
+def test_rates_404_shape_matches_clean_response(
+    mock_get_rates: MagicMock, mock_datetime: MagicMock, client: FlaskClient
+) -> None:
+    """404 payload must carry the same fields _clean_response produces."""
+    mock_datetime.now.return_value = FIXED_NOW
+    mock_get_rates.return_value = MOCK_RATES
+
+    response = client.get("/rates/999")
+    assert response.status_code == 404
+    data = json.loads(response.data)
+    assert set(data.keys()) == {"success", "error", "date", "data", "meta"}
+    assert data["data"] is None
+    assert data["date"] == "03/2026"
+    assert data["meta"]["source"] == "https://example.com/test.pdf"
+
+
+@patch("src.api.datetime")
+@patch("src.api.get_meralco_rates")
 def test_rates_caches_current_month(
     mock_get_rates: MagicMock, mock_datetime: MagicMock, client: FlaskClient
 ) -> None:
@@ -322,6 +340,40 @@ def test_rates_failure_returns_stale_cache(
     data = json.loads(response.data)
     assert data["success"] is True
     assert "warning" in data
+
+
+@patch("src.api.datetime")
+@patch("src.api.get_meralco_rates")
+def test_rates_failure_does_not_hammer_upstream(
+    mock_get_rates: MagicMock, mock_datetime: MagicMock, client: FlaskClient
+) -> None:
+    """After a fetch failure with stale cache, subsequent requests within
+    FALLBACK_RETRY_SECONDS should serve cached data without re-fetching.
+    """
+    mock_datetime.now.return_value = FIXED_NOW
+
+    mock_get_rates.return_value = MOCK_RATES
+    client.get("/rates")
+    assert mock_get_rates.call_count == 1
+
+    # Force the cache to look stale (different month) so the next request
+    # tries to refetch.
+    _cache["month"] = (2026, 5)
+    mock_get_rates.return_value = {
+        "success": False,
+        "error": "Failed",
+        "warning": None,
+        "date": None,
+        "data": None,
+        "meta": {"timestamp": "2026-06-09T10:00:00", "source": None},
+    }
+
+    client.get("/rates")
+    assert mock_get_rates.call_count == 2
+
+    client.get("/rates")
+    client.get("/rates")
+    assert mock_get_rates.call_count == 2
 
 
 @patch("src.api.datetime")

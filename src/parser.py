@@ -7,6 +7,7 @@ pre-computed per-kWh rates at 15 consumption levels (50, 70, 100, 200, ...,
 1:1 with no VAT math or franchise tax estimation required.
 """
 
+import calendar
 import io
 import logging
 import os
@@ -16,6 +17,7 @@ from datetime import datetime
 from typing import Literal, TypedDict
 
 import pdfplumber
+from dateutil.relativedelta import relativedelta
 
 logger = logging.getLogger(__name__)
 
@@ -88,6 +90,8 @@ def parse_residential_bills(rows: list[PdfRow]) -> list[ParsedRate]:
     start = non_lifeline_starts[-1]
     result: list[ParsedRate] = []
     for row in rows[start + 1 :]:
+        if not row:
+            continue
         first = (row[0] or "").strip()
         if not first.isdigit():
             break
@@ -180,10 +184,19 @@ def _cleanup_old_pdfs(keep_urls: list[str]) -> None:
             os.remove(filepath)
 
 
+_MONTH_INDEX = {name.lower(): i for i, name in enumerate(calendar.month_name) if name}
+
 MONTH_REGEX = re.compile(
-    r"(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{4})",
+    "(" + "|".join(name for name in calendar.month_name if name) + r")\s+(\d{4})",
     re.IGNORECASE,
 )
+
+
+def _format_billing_date(match: re.Match[str]) -> str:
+    """Convert a MONTH_REGEX match to a MM/YYYY string."""
+    month = _MONTH_INDEX[match.group(1).lower()]
+    year = int(match.group(2))
+    return f"{month:02d}/{year}"
 
 
 def _extract_billing_date(rows: list[PdfRow]) -> str | None:
@@ -193,15 +206,14 @@ def _extract_billing_date(rows: list[PdfRow]) -> str | None:
     e.g. 'RESIDENTIAL BILLS AT TYPICAL CONSUMPTION LEVELS' / 'April 2026'.
     """
     for row in rows:
+        if not row:
+            continue
         for cell in row:
             if not cell:
                 continue
             match = MONTH_REGEX.search(str(cell))
             if match:
-                from dateutil.parser import parse as parse_date
-
-                dt = parse_date(f"{match.group(1)} {match.group(2)}")
-                return f"{dt.month:02d}/{dt.year}"
+                return _format_billing_date(match)
     return None
 
 
@@ -224,10 +236,7 @@ def _parse_single_month(pdf_bytes: bytes) -> _ParsedMonth | None:
                 page_text = pdf.pages[0].extract_text() or ""
                 match = MONTH_REGEX.search(page_text)
                 if match:
-                    from dateutil.parser import parse as parse_date
-
-                    dt = parse_date(f"{match.group(1)} {match.group(2)}")
-                    billing_date = f"{dt.month:02d}/{dt.year}"
+                    billing_date = _format_billing_date(match)
             return {"entries": entries, "billing_date": billing_date}
     except Exception as e:
         logger.error("Error parsing PDF: %s", e)
@@ -236,8 +245,6 @@ def _parse_single_month(pdf_bytes: bytes) -> _ParsedMonth | None:
 
 def get_meralco_rates() -> MeralcoRatesResult:
     """Main entry point: fetch current and previous month PDFs, compute rate changes."""
-    from dateutil.relativedelta import relativedelta
-
     now = datetime.now()
     meta: MeralcoRatesMeta = {
         "timestamp": now.isoformat(),

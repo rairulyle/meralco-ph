@@ -26,9 +26,6 @@ ENV/
 env/
 .venv
 
-# Pipenv
-Pipfile.lock
-
 # Testing
 .pytest_cache/
 .coverage

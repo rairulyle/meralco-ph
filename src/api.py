@@ -15,7 +15,7 @@ from flask import Flask, jsonify
 from flask.json.provider import DefaultJSONProvider
 from flask.typing import ResponseReturnValue
 
-from .parser import MeralcoRatesResult, RateEntry, get_meralco_rates
+from .parser import MeralcoRatesMeta, MeralcoRatesResult, RateEntry, get_meralco_rates
 
 logging.basicConfig(
     level=logging.INFO,
@@ -46,23 +46,9 @@ _cache: CacheState = {
 }
 _fetch_lock = threading.Lock()
 
-VALID_KWH_LEVELS = {
-    50,
-    70,
-    100,
-    200,
-    300,
-    400,
-    500,
-    600,
-    700,
-    800,
-    900,
-    1000,
-    1500,
-    3000,
-    5000,
-}
+VALID_KWH_LEVELS = frozenset(
+    {50, 70, 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000, 1500, 3000, 5000}
+)
 TYPICAL_KWH = 200
 
 
@@ -121,6 +107,10 @@ def _fetch_and_cache() -> MeralcoRatesResult:
                 "data": cached_data["data"],
                 "meta": cached_data["meta"],
             }
+            _cache["data"] = stale
+            _cache["month"] = (now.year, now.month)
+            _cache["is_fallback"] = True
+            _cache["timestamp"] = now
             return stale
 
         return result
@@ -139,26 +129,39 @@ class _CleanedResult(TypedDict, total=False):
     warning: str
     date: str | None
     data: list[RateEntry] | RateEntry | None
-    meta: object
+    meta: MeralcoRatesMeta | None
 
 
 def _clean_response(data: MeralcoRatesResult) -> _CleanedResult:
-    """Remove null error and warning fields from response."""
+    """Build a response payload from a fetch result, dropping null fields."""
     cleaned: _CleanedResult = {}
-    if data.get("success") is not None:
-        cleaned["success"] = data["success"]
-    if data.get("error") is not None:
-        error = data["error"]
-        assert error is not None
+    success = data.get("success")
+    if success is not None:
+        cleaned["success"] = success
+
+    error = data.get("error")
+    if error is not None:
         cleaned["error"] = error
-    if data.get("warning") is not None:
-        warning = data["warning"]
-        assert warning is not None
+
+    warning = data.get("warning")
+    if warning is not None:
         cleaned["warning"] = warning
+
     cleaned["date"] = data.get("date")
     cleaned["data"] = data.get("data")
     cleaned["meta"] = data.get("meta")
     return cleaned
+
+
+def _error_response(result: MeralcoRatesResult, error: str) -> _CleanedResult:
+    """Build a 404 error payload that mirrors _clean_response's shape."""
+    return {
+        "success": False,
+        "error": error,
+        "date": result.get("date"),
+        "data": None,
+        "meta": result.get("meta"),
+    }
 
 
 @app.route("/")
@@ -186,7 +189,7 @@ class _RatesResponse(TypedDict, total=False):
     success: bool
     date: str | None
     data: list[RateEntry] | RateEntry | None
-    meta: object
+    meta: MeralcoRatesMeta | None
     warning: str
 
 
@@ -214,14 +217,6 @@ def rates() -> ResponseReturnValue:
     return jsonify(_build_response(result, result.get("data")))
 
 
-class _ErrorResponse(TypedDict, total=False):
-    success: bool
-    error: str
-    date: str | None
-    data: None
-    meta: object
-
-
 @app.route("/rates/<kwh_slug>")
 def rates_by_kwh(kwh_slug: str) -> ResponseReturnValue:
     result = _fetch_and_cache()
@@ -240,26 +235,25 @@ def rates_by_kwh(kwh_slug: str) -> ResponseReturnValue:
 
     if kwh is None or kwh not in VALID_KWH_LEVELS:
         valid = ", ".join(str(k) for k in sorted(VALID_KWH_LEVELS))
-        error_payload: _ErrorResponse = {
-            "success": False,
-            "error": f"Consumption level not available. Valid: {valid}, typical",
-            "date": result.get("date"),
-            "data": None,
-            "meta": result.get("meta"),
-        }
-        return jsonify(error_payload), 404
+        return (
+            jsonify(
+                _error_response(
+                    result,
+                    f"Consumption level not available. Valid: {valid}, typical",
+                )
+            ),
+            404,
+        )
 
     entries = result.get("data") or []
     entry = _find_entry(entries, kwh)
     if not entry:
-        not_found_payload: _ErrorResponse = {
-            "success": False,
-            "error": f"Rate for {kwh} kWh not found in current data",
-            "date": result.get("date"),
-            "data": None,
-            "meta": result.get("meta"),
-        }
-        return jsonify(not_found_payload), 404
+        return (
+            jsonify(
+                _error_response(result, f"Rate for {kwh} kWh not found in current data")
+            ),
+            404,
+        )
 
     return jsonify(_build_response(result, entry))
 

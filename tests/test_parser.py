@@ -23,6 +23,27 @@ from src.parser import (
 FIXTURE_DIR = os.path.join(os.path.dirname(__file__), "fixtures")
 FIXTURE_BILLS_MAR = os.path.join(FIXTURE_DIR, "03-2026_residential_bills.pdf")
 FIXTURE_BILLS_FEB = os.path.join(FIXTURE_DIR, "02-2026_residential_bills.pdf")
+# Nov 2025 fixture: regression for the multi-line VAT cell format that
+# broke parsing in commit 8db84eb. Keep until MERALCO drops the format.
+FIXTURE_BILLS_NOV_2025 = os.path.join(FIXTURE_DIR, "11-2025_residential_bills.pdf")
+
+EXPECTED_KWH_LEVELS = [
+    50,
+    70,
+    100,
+    200,
+    300,
+    400,
+    500,
+    600,
+    700,
+    800,
+    900,
+    1000,
+    1500,
+    3000,
+    5000,
+]
 
 
 def _load_rows(pdf_path: str) -> list[PdfRow]:
@@ -63,24 +84,7 @@ def test_get_pdf_url_february_2026() -> None:
 class TestParseResidentialBills:
     def test_returns_all_consumption_levels(self) -> None:
         result = parse_residential_bills(_load_rows(FIXTURE_BILLS_MAR))
-        kwh_values = [r["kwh"] for r in result]
-        assert kwh_values == [
-            50,
-            70,
-            100,
-            200,
-            300,
-            400,
-            500,
-            600,
-            700,
-            800,
-            900,
-            1000,
-            1500,
-            3000,
-            5000,
-        ]
+        assert [r["kwh"] for r in result] == EXPECTED_KWH_LEVELS
 
     def test_200_kwh_matches_published_rate_mar(self) -> None:
         result = parse_residential_bills(_load_rows(FIXTURE_BILLS_MAR))
@@ -105,6 +109,25 @@ class TestParseResidentialBills:
     def test_rows_without_non_lifeline_marker_returns_empty(self) -> None:
         rows: list[PdfRow] = [["50", "foo", "bar"], ["100", "baz", "qux"]]
         assert parse_residential_bills(rows) == []
+
+    def test_skips_empty_rows(self) -> None:
+        rows: list[PdfRow] = [
+            ["For Non-Lifeline Customers", None, None, None],
+            [],
+            ["50", None, None, "13.5"],
+        ]
+        result = parse_residential_bills(rows)
+        assert result == [{"kwh": 50, "rate": 13.5}]
+
+    def test_nov_2025_multi_line_vat_format(self) -> None:
+        """Regression: Nov 2025 PDF used multi-line VAT cells that broke parsing.
+
+        Commit 8db84eb fixed the parser; this fixture locks in the fix.
+        """
+        result = parse_residential_bills(_load_rows(FIXTURE_BILLS_NOV_2025))
+        assert [r["kwh"] for r in result] == EXPECTED_KWH_LEVELS
+        row_200 = next(r for r in result if r["kwh"] == 200)
+        assert row_200["rate"] == 13.4702
 
 
 # -------------------------------------------------------------------
@@ -171,6 +194,18 @@ class TestExtractBillingDate:
     def test_extracts_date_from_feb_fixture(self) -> None:
         rows = _load_rows(FIXTURE_BILLS_FEB)
         assert _extract_billing_date(rows) == "02/2026"
+
+    def test_nov_2025_date_falls_back_to_page_text(self) -> None:
+        """Nov 2025 PDF has the month outside the table grid; the row-only
+        extractor returns None and `_parse_single_month` should fall back to
+        extract_text() to recover the date.
+        """
+        from src.parser import _parse_single_month
+
+        with open(FIXTURE_BILLS_NOV_2025, "rb") as f:
+            parsed = _parse_single_month(f.read())
+        assert parsed is not None
+        assert parsed["billing_date"] == "11/2025"
 
     def test_returns_none_for_empty_rows(self) -> None:
         assert _extract_billing_date([]) is None
