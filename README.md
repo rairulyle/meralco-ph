@@ -7,7 +7,7 @@ MERALCO is the largest electric distribution utility company in the Philippines,
 ## ✨ Features
 
 - Home Assistant Add-on
-- Rates at 15 consumption levels: 50, 70, 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000, 1500, 3000, 5000 kWh
+- Rates at 15 consumption levels (Default: 200): 50, 70, 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000, 1500, 3000, 5000 kWh
 - Month-over-month rate changes with trend indicator
 - Caches data to minimize requests (refreshes monthly)
 - Returns previous month's rates if current month is unavailable
@@ -26,14 +26,18 @@ The easiest way to use MERALCO PH with Home Assistant. Install the add-on and se
 - The official **Mosquitto broker** add-on installed and running.
 - The **MQTT integration** configured in Home Assistant (this happens automatically when Mosquitto is installed and started).
 
-If you don't have an MQTT broker yet, install the Mosquitto broker add-on first: **Settings → Add-ons → Add-on Store → Mosquitto broker → Install → Start**.
+If you don't have an MQTT broker yet, install the Mosquitto broker add-on first:
+
+**Settings → Add-ons → Add-on Store → Mosquitto broker → Install → Start**.
 
 ### Installation
 
 1. Click the **Add repository** button above, or manually add the repository in **Settings → Add-ons → Add-on Store → ⋮ (top right) → Repositories** and paste:
-  ```
+
+   ```
    https://github.com/rairulyle/meralco-ph
-  ```
+   ```
+
 2. Refresh the Add-on Store page, find **MERALCO Electricity Rates**, and click **Install**.
 3. Open the **Configuration** tab. Defaults are fine for most users; see [DOCS.md](DOCS.md) for the full options reference.
 4. Click **Start** on the **Info** tab.
@@ -101,7 +105,6 @@ rest:
 ```
 
 ## 📡 API Endpoints
-
 
 | Endpoint             | Description                                                                                                                                                |
 | -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |

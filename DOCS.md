@@ -15,14 +15,14 @@ This add-on parses MERALCO's official residential bills PDF every month and expo
 
 ## Options
 
-| Option | Default | Description |
-| --- | --- | --- |
-| `mode` | `mqtt` | Either `mqtt` (auto-publish sensors via discovery) or `rest` (run the REST API on port 5000). |
-| `log_level` | `info` | Logging verbosity. One of: `trace`, `debug`, `info`, `notice`, `warning`, `error`, `fatal`. |
-| `scan_interval` | `86400` (1 day) | How often to re-publish state to MQTT, in seconds. Range: 3600 to 604800. The PDF source only changes monthly, so anything finer is wasted. Used in `mqtt` mode only. |
-| `kwh_levels` | `[200]` | Which consumption levels to expose as sensors. Valid: 50, 70, 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000, 1500, 3000, 5000. Used in `mqtt` mode only. |
-| `mqtt_topic_prefix` | `meralco` | Prefix for state and availability topics. Used in `mqtt` mode only. |
-| `mqtt_discovery_prefix` | `homeassistant` | HA's MQTT discovery prefix. Only change if your HA install uses a custom prefix. Used in `mqtt` mode only. |
+| Option                  | Default         | Description                                                                                                                                                           |
+| ----------------------- | --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `mode`                  | `mqtt`          | Either `mqtt` (auto-publish sensors via discovery) or `rest` (run the REST API on port 5000).                                                                         |
+| `log_level`             | `info`          | Logging verbosity. One of: `trace`, `debug`, `info`, `notice`, `warning`, `error`, `fatal`.                                                                           |
+| `scan_interval`         | `86400` (1 day) | How often to re-publish state to MQTT, in seconds. Range: 3600 to 604800. The PDF source only changes monthly, so anything finer is wasted. Used in `mqtt` mode only. |
+| `kwh_levels`            | `[200]`         | Which consumption levels to expose as sensors. Valid: 50, 70, 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000, 1500, 3000, 5000. Used in `mqtt` mode only.          |
+| `mqtt_topic_prefix`     | `meralco`       | Prefix for state and availability topics. Used in `mqtt` mode only.                                                                                                   |
+| `mqtt_discovery_prefix` | `homeassistant` | HA's MQTT discovery prefix. Only change if your HA install uses a custom prefix. Used in `mqtt` mode only.                                                            |
 
 ## Sensors created in `mqtt` mode
 
@@ -56,6 +56,14 @@ rest:
       - name: "MERALCO - Rate"
         unit_of_measurement: "PHP/kWh"
         value_template: "{{ value_json.data.rate }}"
+      - name: "MERALCO - Rate Change"
+        unit_of_measurement: "PHP/kWh"
+        value_template: "{{ value_json.data.rate_change }}"
+      - name: "MERALCO - Rate Change Percent"
+        unit_of_measurement: "%"
+        value_template: "{{ value_json.data.rate_change_percent }}"
+      - name: "MERALCO - Trend"
+        value_template: "{{ value_json.data.trend }}"
 ```
 
 The add-on exposes the same endpoints as the standalone Docker image:
