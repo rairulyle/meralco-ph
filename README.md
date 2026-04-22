@@ -1,5 +1,17 @@
 # ⚡ MERALCO PH - API
 
+[![GitHub Release][releases-shield]][releases]
+[![License][license-shield]][license]
+
+![Supports amd64 Architecture][amd64-shield]
+![Supports aarch64 Architecture][aarch64-shield]
+
+[![Build Status][github-actions-shield]][github-actions]
+![Project Maintenance][maintenance-shield]
+[![GitHub Activity][commits-shield]][commits]
+
+[![Buy Me a Coffee][bmc-shield]][bmc]
+
 Konnichiwassup! This is a REST API that provides current MERALCO (Manila Electric Company) electricity rates in the Philippines.
 
 MERALCO is the largest electric distribution utility company in the Philippines, serving Metro Manila and nearby provinces. This API automatically parses MERALCO's monthly residential bills and serves per-kWh rates at every consumption level they publish. Rates match MERALCO's published [typical household article](https://company.meralco.com.ph/news-and-advisories/higher-residential-rates-april-2026).
@@ -233,3 +245,17 @@ MIT License, see [LICENSE](LICENSE) for details.
 ---
 
 **Keywords:** MERALCO rates, Philippines electricity rates, Philippine power rates, Manila Electric Company, MERALCO kWh rate, Philippine electricity price, Home Assistant MERALCO integration, MERALCO API, MERALCO Docker
+
+[releases-shield]: https://img.shields.io/github/v/release/rairulyle/meralco-ph
+[releases]: https://github.com/rairulyle/meralco-ph/releases
+[license-shield]: https://img.shields.io/github/license/rairulyle/meralco-ph
+[license]: https://github.com/rairulyle/meralco-ph/blob/main/LICENSE
+[amd64-shield]: https://img.shields.io/badge/amd64-yes-green.svg
+[aarch64-shield]: https://img.shields.io/badge/aarch64-yes-green.svg
+[github-actions-shield]: https://img.shields.io/github/actions/workflow/status/rairulyle/meralco-ph/docker-publish.yml
+[github-actions]: https://github.com/rairulyle/meralco-ph/actions
+[maintenance-shield]: https://img.shields.io/maintenance/yes/2026
+[commits-shield]: https://img.shields.io/github/commit-activity/m/rairulyle/meralco-ph
+[commits]: https://github.com/rairulyle/meralco-ph/commits/main
+[bmc-shield]: https://img.shields.io/badge/Buy%20Me%20a%20Coffee-FFDD00?logo=buymeacoffee&logoColor=black
+[bmc]: https://buymeacoffee.com/rairulyle
