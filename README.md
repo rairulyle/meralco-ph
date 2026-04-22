@@ -2,13 +2,12 @@
 
 [![GitHub Release][releases-shield]][releases]
 [![License][license-shield]][license]
-
-![Supports amd64 Architecture][amd64-shield]
-![Supports aarch64 Architecture][aarch64-shield]
-
 [![Build Status][github-actions-shield]][github-actions]
 ![Project Maintenance][maintenance-shield]
 [![GitHub Activity][commits-shield]][commits]
+
+![Supports amd64 Architecture][amd64-shield]
+![Supports aarch64 Architecture][aarch64-shield]
 
 [![Buy Me a Coffee][bmc-shield]][bmc]
 
@@ -125,7 +124,6 @@ rest:
 | `GET /rates/<kwh>`   | Specific consumption level (e.g. `/rates/100`, `/rates/500`)                                                                                               |
 | `GET /health`        | Health check                                                                                                                                               |
 
-
 ### Valid consumption levels
 
 `50`, `70`, `100`, `200`, `300`, `400`, `500`, `600`, `700`, `800`, `900`, `1000`, `1500`, `3000`, `5000`, `typical` (alias for 200)
@@ -183,7 +181,6 @@ rest:
 }
 ```
 
-
 | Field                 | Description                                                      | Example   |
 | --------------------- | ---------------------------------------------------------------- | --------- |
 | `kwh`                 | Consumption level in kWh                                         | `200`     |
@@ -191,7 +188,6 @@ rest:
 | `rate_change`         | Change from previous month (negative = decrease)                 | `0.6427`  |
 | `rate_change_percent` | Percentage change from previous month                            | `4.88`    |
 | `trend`               | Rate direction: `up`, `down`, or `stable`                        | `"up"`    |
-
 
 ## 🔧 Manual Installation
 
