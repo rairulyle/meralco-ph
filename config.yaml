@@ -3,7 +3,7 @@ version: "2.0.2"
 slug: meralco-ph
 description: Parses MERALCO's official residential bills PDF and exposes per-kWh rates via MQTT discovery or REST API.
 url: "https://github.com/rairulyle/meralco-ph"
-image: ghcr.io/rairulyle/{arch}-meralco-ph
+image: ghcr.io/rairulyle/meralco-ph-addon
 arch:
   - amd64
   - aarch64

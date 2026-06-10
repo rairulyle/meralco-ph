@@ -1,8 +1,0 @@
-build_from:
-  amd64: "ghcr.io/home-assistant/amd64-base-python:3.12-alpine3.20"
-  aarch64: "ghcr.io/home-assistant/aarch64-base-python:3.12-alpine3.20"
-labels:
-  org.opencontainers.image.title: "Home Assistant Add-on: MERALCO Electricity Rates"
-  org.opencontainers.image.description: "Parses MERALCO's residential bills PDF and exposes per-kWh rates via MQTT or REST"
-  org.opencontainers.image.source: "https://github.com/rairulyle/meralco-ph"
-  org.opencontainers.image.licenses: "MIT"

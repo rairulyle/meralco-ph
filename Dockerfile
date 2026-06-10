@@ -1,5 +1,13 @@
-ARG BUILD_FROM
-FROM ${BUILD_FROM}
+# check=skip=InvalidBaseImagePlatform
+
+# HA base images are published per-arch as `amd64-…` / `aarch64-…` with no
+# generic multi-arch manifest, so map buildx's TARGETARCH (amd64 / arm64)
+# onto the matching base via stage aliases. Only the selected stage is pulled.
+FROM ghcr.io/home-assistant/amd64-base-python:3.12-alpine3.20 AS base-amd64
+FROM ghcr.io/home-assistant/aarch64-base-python:3.12-alpine3.20 AS base-arm64
+
+ARG TARGETARCH
+FROM base-${TARGETARCH}
 
 WORKDIR /app
 

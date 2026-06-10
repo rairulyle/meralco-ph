@@ -57,16 +57,16 @@ If the PDF table structure changes (e.g. different row labels or column layout),
 
 ## Release flow (maintainer)
 
-Releases are tag-driven. The `docker-publish.yml` workflow triggers on `v*` tag pushes and publishes three images to GHCR: `meralco-ph` (multi-arch standalone), `amd64-meralco-ph` and `aarch64-meralco-ph` (HA add-on per-arch).
+Releases are tag-driven. The `docker-publish.yml` workflow triggers on `v*` tag pushes and publishes two multi-arch images (amd64 + aarch64) to GHCR: `meralco-ph` (standalone) and `meralco-ph-addon` (HA add-on).
 
-The add-on's `config.yaml` uses `image: ghcr.io/rairulyle/{arch}-meralco-ph`, so HA Supervisor pulls the tag matching `version:`. That tag must exist on GHCR before users can install or update.
+The add-on's `config.yaml` uses `image: ghcr.io/rairulyle/meralco-ph-addon`, so HA Supervisor pulls the tag matching `version:`. That tag must exist on GHCR before users can install or update.
 
 To cut a release:
 
 1. On a branch, bump `version:` in `config.yaml` and update `CHANGELOG.md`.
 2. Merge the branch into `main`.
 3. Tag `main` with `vX.Y.Z` (matching the new version) and push the tag.
-4. Wait for CI to finish publishing all three images.
+4. Wait for CI to finish publishing both images.
 5. Users see the new version in the HA add-on store or via `docker pull`.
 
 Steps 2 and 3 must be in that order. If you tag before merging, the workflow builds the old code under the new tag.
