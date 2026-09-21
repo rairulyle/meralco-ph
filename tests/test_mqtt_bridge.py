@@ -51,6 +51,7 @@ def test_publish_discovery_200kwh_is_unsuffixed_others_are_suffixed(
         "homeassistant/sensor/meralco_rate_change_300kwh/config",
         "homeassistant/sensor/meralco_rate_change_percent_300kwh/config",
         "homeassistant/sensor/meralco_trend_300kwh/config",
+        "homeassistant/sensor/meralco_generation_charge/config",
     }
     assert set(discovery_topics) == expected
 
@@ -144,6 +145,52 @@ def test_trend_sensor_omits_unit_and_device_class(
     assert "device_class" not in payload
     assert "state_class" not in payload
     assert payload["value_template"] == "{{ value_json.trend | default(none, true) }}"
+
+
+def test_generation_charge_discovery_payload(mock_client: MagicMock) -> None:
+    """Generation charge is level-independent: one unsuffixed sensor per device."""
+    from src.mqtt_bridge import MeralcoMQTTBridge
+
+    bridge = MeralcoMQTTBridge(host="broker.local", kwh_levels=[300, 500])
+    bridge.publish_discovery()
+
+    payloads = _publish_calls_by_topic(mock_client)
+    generation_topics = [t for t in payloads if "generation_charge" in t]
+    assert generation_topics == [
+        "homeassistant/sensor/meralco_generation_charge/config"
+    ]
+
+    payload = payloads[generation_topics[0]]
+    assert payload["name"] == "Generation Charge"
+    assert payload["unique_id"] == "meralco_generation_charge"
+    assert payload["state_topic"] == "meralco/generation_charge"
+    assert payload["unit_of_measurement"] == "PHP/kWh"
+    assert payload["state_class"] == "measurement"
+    assert payload["suggested_display_precision"] == 4
+    assert payload["availability_topic"] == "meralco/status"
+    assert "value_template" not in payload
+
+
+def test_publish_generation_charge_writes_retained_value(
+    mock_client: MagicMock,
+) -> None:
+    from src.mqtt_bridge import MeralcoMQTTBridge
+
+    bridge = MeralcoMQTTBridge(host="broker.local", kwh_levels=[200])
+    bridge.publish_generation_charge(7.8607)
+
+    mock_client.publish.assert_called_once_with(
+        "meralco/generation_charge", "7.8607", qos=1, retain=True
+    )
+
+
+def test_publish_generation_charge_skips_none(mock_client: MagicMock) -> None:
+    from src.mqtt_bridge import MeralcoMQTTBridge
+
+    bridge = MeralcoMQTTBridge(host="broker.local", kwh_levels=[200])
+    bridge.publish_generation_charge(None)
+
+    mock_client.publish.assert_not_called()
 
 
 def _state_publish_calls(client: MagicMock) -> dict[str, RateStateEntry]:
@@ -299,4 +346,4 @@ def test_on_message_homeassistant_online_republishes_discovery(
     discovery_calls = [
         c for c in mock_client.publish.call_args_list if "/config" in c.args[0]
     ]
-    assert len(discovery_calls) == 4  # 1 kwh × 4 sensor kinds
+    assert len(discovery_calls) == 5  # 1 kwh × 4 sensor kinds + generation charge

@@ -3,7 +3,7 @@ Meralco MQTT Bridge
 
 Connects to an MQTT broker and publishes Meralco electricity rate sensors
 via Home Assistant MQTT discovery. One device, four sensors per kWh level
-in `kwh_levels`. The 200 kWh "typical" baseline is always exposed unsuffixed
+in `kwh_levels`, plus one level-independent generation charge sensor. The 200 kWh "typical" baseline is always exposed unsuffixed
 (meralco_rate, meralco_rate_change, etc.) so its entity IDs stay stable when
 users add or remove other levels.
 """
@@ -70,7 +70,7 @@ class SensorKind(TypedDict):
     device_class: str | None
     state_class: str | None
     icon: str
-    value_template: str
+    value_template: str | None
     precision: int | None
 
 
@@ -117,6 +117,19 @@ SENSOR_KINDS: list[SensorKind] = [
     },
 ]
 
+# Generation charge is identical at every consumption level, so it is exposed
+# once per device instead of once per kWh level.
+GENERATION_CHARGE_KIND: SensorKind = {
+    "suffix": "generation_charge",
+    "name": "Generation Charge",
+    "unit": "PHP/kWh",
+    "device_class": None,
+    "state_class": "measurement",
+    "icon": "mdi:transmission-tower",
+    "value_template": None,
+    "precision": 4,
+}
+
 
 class MeralcoMQTTBridge:
     """Manages an MQTT connection and HA discovery for Meralco rate sensors."""
@@ -146,6 +159,7 @@ class MeralcoMQTTBridge:
             self._client.username_pw_set(username, password)
 
         self._availability_topic = f"{topic_prefix}/status"
+        self._generation_charge_topic = f"{topic_prefix}/generation_charge"
         self._client.will_set(
             self._availability_topic, payload="offline", qos=1, retain=True
         )
@@ -186,19 +200,29 @@ class MeralcoMQTTBridge:
         return f"{kind_name} ({kwh} kWh)"
 
     def _build_discovery_payload(self, kwh: int, kind: SensorKind) -> DiscoveryPayload:
-        unique_id = self._unique_id(kwh, kind["suffix"])
+        return self._build_sensor_payload(
+            unique_id=self._unique_id(kwh, kind["suffix"]),
+            name=self._sensor_friendly_name(kwh, kind["name"]),
+            state_topic=self._state_topic(kwh),
+            kind=kind,
+        )
+
+    def _build_sensor_payload(
+        self, unique_id: str, name: str, state_topic: str, kind: SensorKind
+    ) -> DiscoveryPayload:
         payload: DiscoveryPayload = {
-            "name": self._sensor_friendly_name(kwh, kind["name"]),
+            "name": name,
             "unique_id": unique_id,
             "object_id": unique_id,
-            "state_topic": self._state_topic(kwh),
-            "value_template": kind["value_template"],
+            "state_topic": state_topic,
             "availability_topic": self._availability_topic,
             "payload_available": "online",
             "payload_not_available": "offline",
             "device": self._device_block(),
             "icon": kind["icon"],
         }
+        if kind["value_template"] is not None:
+            payload["value_template"] = kind["value_template"]
         if kind["unit"] is not None:
             payload["unit_of_measurement"] = kind["unit"]
         if kind["device_class"] is not None:
@@ -216,6 +240,20 @@ class MeralcoMQTTBridge:
                 payload = self._build_discovery_payload(kwh, kind)
                 self._client.publish(topic, json.dumps(payload), qos=1, retain=True)
 
+        unique_id = f"meralco_{GENERATION_CHARGE_KIND['suffix']}"
+        generation_payload = self._build_sensor_payload(
+            unique_id=unique_id,
+            name=GENERATION_CHARGE_KIND["name"],
+            state_topic=self._generation_charge_topic,
+            kind=GENERATION_CHARGE_KIND,
+        )
+        self._client.publish(
+            f"{self.discovery_prefix}/sensor/{unique_id}/config",
+            json.dumps(generation_payload),
+            qos=1,
+            retain=True,
+        )
+
     def publish_state(self, rate_data: dict[int, RateStateEntry]) -> None:
         """Publish one JSON payload per configured kWh level present in rate_data."""
         for kwh in self.kwh_levels:
@@ -225,6 +263,14 @@ class MeralcoMQTTBridge:
                 continue
             payload = json.dumps(entry)
             self._client.publish(self._state_topic(kwh), payload, qos=1, retain=True)
+
+    def publish_generation_charge(self, generation_charge: float | None) -> None:
+        if generation_charge is None:
+            logger.debug("No generation charge data, skipping")
+            return
+        self._client.publish(
+            self._generation_charge_topic, str(generation_charge), qos=1, retain=True
+        )
 
     def publish_online(self) -> None:
         self._client.publish(self._availability_topic, "online", qos=1, retain=True)

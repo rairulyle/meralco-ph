@@ -13,6 +13,7 @@ import signal
 import sys
 import threading
 import urllib.request
+from collections.abc import Sequence
 from pathlib import Path
 from types import FrameType
 from typing import TypedDict, cast
@@ -114,12 +115,24 @@ def _apply_env_vars(config: AddonConfig) -> None:
         config["mqtt_discovery_prefix"] = value
 
 
-def _validate_kwh_levels(levels: list[int]) -> list[int]:
-    """Drop levels not in VALID_KWH_LEVELS, log a warning per drop."""
+def _coerce_kwh_level(level: int | str | None) -> int | None:
+    if level is None:
+        return None
+    try:
+        return int(level)
+    except ValueError:
+        return None
+
+
+def _validate_kwh_levels(levels: Sequence[int | str | None]) -> list[int]:
+    """Coerce levels to int (the add-on UI select stores them as strings) and
+    drop any not in VALID_KWH_LEVELS, logging a warning per drop.
+    """
     valid: list[int] = []
     for level in levels:
-        if level in VALID_KWH_LEVELS:
-            valid.append(level)
+        coerced = _coerce_kwh_level(level)
+        if coerced in VALID_KWH_LEVELS:
+            valid.append(coerced)
         else:
             logger.warning(
                 "Dropping invalid kwh_level=%s (not in VALID_KWH_LEVELS)", level
@@ -249,6 +262,7 @@ def _publish_one_cycle(bridge: MeralcoMQTTBridge, kwh_levels: list[int]) -> None
                 "trend": trend,
             }
     bridge.publish_state(by_kwh)
+    bridge.publish_generation_charge(result.get("generation_charge"))
 
 
 def main() -> None:

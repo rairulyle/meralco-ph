@@ -25,7 +25,7 @@ schema:
   log_level: "list(trace|debug|info|notice|warning|error|fatal)"
   scan_interval: "int(3600,604800)"
   kwh_levels:
-    - "int(50,5000)"
+    - "list(50|70|100|200|300|400|500|600|700|800|900|1000|1500|3000|5000)"
   mqtt_topic_prefix: str
   mqtt_discovery_prefix: str
 ports:

@@ -17,6 +17,7 @@ from src.parser import (
     download_pdf,
     get_meralco_rates,
     get_pdf_url,
+    parse_generation_charge,
     parse_residential_bills,
 )
 
@@ -128,6 +129,53 @@ class TestParseResidentialBills:
         assert [r["kwh"] for r in result] == EXPECTED_KWH_LEVELS
         row_200 = next(r for r in result if r["kwh"] == 200)
         assert row_200["rate"] == 13.4702
+
+
+# -------------------------------------------------------------------
+# parse_generation_charge
+# -------------------------------------------------------------------
+
+
+class TestParseGenerationCharge:
+    @pytest.mark.parametrize(
+        ("fixture", "expected"),
+        [
+            (FIXTURE_BILLS_MAR, 7.8607),
+            (FIXTURE_BILLS_FEB, 7.6398),
+            (FIXTURE_BILLS_NOV_2025, 7.9),
+        ],
+    )
+    def test_matches_published_generation_charge(
+        self, fixture: str, expected: float
+    ) -> None:
+        assert parse_generation_charge(_load_rows(fixture)) == expected
+
+    def test_empty_rows_returns_none(self) -> None:
+        assert parse_generation_charge([]) is None
+
+    def test_missing_header_returns_none(self) -> None:
+        rows: list[PdfRow] = [
+            ["For Non-Lifeline Customers", None, None],
+            ["50", "7.8607", "13.5"],
+        ]
+        assert parse_generation_charge(rows) is None
+
+    def test_missing_non_lifeline_marker_returns_none(self) -> None:
+        rows: list[PdfRow] = [
+            ["kWh\nConsumption", "Generation\nCharge", "Total\nBill"],
+            ["50", "7.8607", "13.5"],
+        ]
+        assert parse_generation_charge(rows) is None
+
+    def test_reads_header_column_from_last_non_lifeline_section(self) -> None:
+        rows: list[PdfRow] = [
+            ["kWh\nConsumption", "Generation\nCharge", "Total\nBill"],
+            ["For Non-Lifeline Customers", None, None],
+            ["50", "393.04", "708.87"],
+            ["For Non-Lifeline Customers", None, None],
+            ["50", "7 .8607", "1 4.1766"],
+        ]
+        assert parse_generation_charge(rows) == 7.8607
 
 
 # -------------------------------------------------------------------
@@ -321,6 +369,7 @@ class TestGetMeralcoRates:
         assert entry_200["rate"] == 13.8161
         assert entry_200["rate_change"] == round(13.8161 - 13.1734, 4)
         assert entry_200["trend"] == "up"
+        assert result["generation_charge"] == 7.8607
 
     @patch("src.parser.download_pdf")
     def test_current_month_fails_falls_back(self, mock_download: MagicMock) -> None:
@@ -344,3 +393,4 @@ class TestGetMeralcoRates:
         result = get_meralco_rates()
         assert result["success"] is False
         assert result["error"] is not None
+        assert result["generation_charge"] is None

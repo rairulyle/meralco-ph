@@ -18,6 +18,7 @@ MOCK_RATES: MeralcoRatesResult = {
     "error": None,
     "warning": None,
     "date": "03/2026",
+    "generation_charge": 7.8607,
     "data": [
         {
             "kwh": 50,
@@ -183,6 +184,7 @@ def test_rates_returns_all_levels(
     assert data["success"] is True
     assert len(data["data"]) == 15
     assert data["date"] == "03/2026"
+    assert data["generation_charge"] == 7.8607
     assert "error" not in data
     assert "warning" not in data
 
@@ -277,7 +279,14 @@ def test_rates_404_shape_matches_clean_response(
     response = client.get("/rates/999")
     assert response.status_code == 404
     data = json.loads(response.data)
-    assert set(data.keys()) == {"success", "error", "date", "data", "meta"}
+    assert set(data.keys()) == {
+        "success",
+        "error",
+        "date",
+        "generation_charge",
+        "data",
+        "meta",
+    }
     assert data["data"] is None
     assert data["date"] == "03/2026"
     assert data["meta"]["source"] == "https://example.com/test.pdf"
@@ -332,6 +341,7 @@ def test_rates_failure_returns_stale_cache(
         "error": "Failed",
         "warning": None,
         "date": None,
+        "generation_charge": None,
         "data": None,
         "meta": {"timestamp": "2026-06-09T10:00:00", "source": None},
     }
@@ -364,6 +374,7 @@ def test_rates_failure_does_not_hammer_upstream(
         "error": "Failed",
         "warning": None,
         "date": None,
+        "generation_charge": None,
         "data": None,
         "meta": {"timestamp": "2026-06-09T10:00:00", "source": None},
     }
@@ -387,6 +398,7 @@ def test_rates_complete_failure_no_cache(
         "error": "Could not find rate information",
         "warning": None,
         "date": None,
+        "generation_charge": None,
         "data": None,
         "meta": {"timestamp": "2026-06-09T10:00:00", "source": None},
     }
@@ -395,3 +407,39 @@ def test_rates_complete_failure_no_cache(
     data = json.loads(response.data)
     assert data["success"] is False
     assert data["error"] is not None
+
+
+@patch("src.api.datetime")
+@patch("src.api.get_meralco_rates")
+def test_rates_by_kwh_includes_generation_charge(
+    mock_get_rates: MagicMock, mock_datetime: MagicMock, client: FlaskClient
+) -> None:
+    mock_datetime.now.return_value = FIXED_NOW
+    mock_get_rates.return_value = MOCK_RATES
+
+    data = json.loads(client.get("/rates/typical").data)
+    assert data["generation_charge"] == 7.8607
+
+
+@patch("src.api.datetime")
+@patch("src.api.get_meralco_rates")
+def test_stale_cache_keeps_generation_charge(
+    mock_get_rates: MagicMock, mock_datetime: MagicMock, client: FlaskClient
+) -> None:
+    mock_datetime.now.return_value = FIXED_NOW
+    mock_get_rates.return_value = MOCK_RATES
+    client.get("/rates")
+
+    _cache["month"] = (2026, 5)
+    mock_get_rates.return_value = {
+        "success": False,
+        "error": "Failed",
+        "warning": None,
+        "date": None,
+        "generation_charge": None,
+        "data": None,
+        "meta": {"timestamp": "2026-06-09T10:00:00", "source": None},
+    }
+
+    data = json.loads(client.get("/rates").data)
+    assert data["generation_charge"] == 7.8607
