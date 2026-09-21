@@ -60,8 +60,9 @@ For each entry in `kwh_levels`, the add-on creates four sensors under one device
 
 - `sensor.meralco_rate`, `sensor.meralco_rate_change`, `sensor.meralco_rate_change_percent`, `sensor.meralco_trend`: always 200 kWh
 - `sensor.meralco_rate_<kwh>kwh`, etc.: for every other level (e.g. `300`, `500`)
+- `sensor.meralco_generation_charge`: generation charge in PHP per kWh. It is the same at every level, so it is created once. Useful as the net metering export rate reference.
 
-Example: with `kwh_levels: [200, 300]` you get eight sensors total.
+Example: with `kwh_levels: [200, 300]` you get nine sensors total.
 
 ## 🐳 Standalone Docker (alternative)
 
@@ -136,6 +137,7 @@ rest:
 {
   "success": true,
   "date": "03/2026",
+  "generation_charge": 7.8607,
   "data": [
     {
       "kwh": 50,
@@ -167,6 +169,7 @@ rest:
 {
   "success": true,
   "date": "03/2026",
+  "generation_charge": 7.8607,
   "data": {
     "kwh": 200,
     "rate": 13.8161,
@@ -188,6 +191,7 @@ rest:
 | `rate_change`         | Change from previous month (negative = decrease)                 | `0.6427`  |
 | `rate_change_percent` | Percentage change from previous month                            | `4.88`    |
 | `trend`               | Rate direction: `up`, `down`, or `stable`                        | `"up"`    |
+| `generation_charge`   | Generation charge per kWh (PHP, top level, same for all levels)  | `7.8607`  |
 
 ## 🔧 Manual Installation
 

@@ -42,7 +42,11 @@ For every other consumption level, sensors carry a `_<kwh>kwh` suffix:
 - `sensor.meralco_rate_change_percent_<kwh>kwh`
 - `sensor.meralco_trend_<kwh>kwh`
 
-Example: with `kwh_levels: [200, 300]` you get eight sensors total. Four unsuffixed (200 kWh) and four with the `_300kwh` suffix.
+One more sensor is created once per device, because the value is the same at every consumption level:
+
+- `sensor.meralco_generation_charge`: generation charge in PHP per kWh. Useful as the net metering export rate reference.
+
+Example: with `kwh_levels: [200, 300]` you get nine sensors total. Four unsuffixed (200 kWh), four with the `_300kwh` suffix, and the generation charge.
 
 ## Using `rest` mode
 
@@ -64,6 +68,9 @@ rest:
         value_template: "{{ value_json.data.rate_change_percent }}"
       - name: "MERALCO - Trend"
         value_template: "{{ value_json.data.trend }}"
+      - name: "MERALCO - Generation Charge"
+        unit_of_measurement: "PHP/kWh"
+        value_template: "{{ value_json.generation_charge }}"
 ```
 
 The add-on exposes the same endpoints as the standalone Docker image:
@@ -76,7 +83,7 @@ The add-on exposes the same endpoints as the standalone Docker image:
 ## Troubleshooting
 
 - "No MQTT broker available": install the Mosquitto broker add-on (or any MQTT broker that registers with Supervisor) and restart this add-on.
-- "Failed to save: Invalid list for option 'kwh_levels'": when editing the config in YAML mode, `kwh_levels` must be a YAML list, not a bare number. Write `kwh_levels: [3000]` or:
+- "Failed to save: Invalid list for option 'kwh_levels'": update the add-on. Older versions showed `kwh_levels` as a single number box in the UI, which could not be saved. It is now a multi-select. When editing in YAML mode, `kwh_levels` must be a YAML list, not a bare number. Write `kwh_levels: [3000]` or:
 
   ```yaml
   kwh_levels:

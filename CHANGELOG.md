@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- Generation charge (PHP/kWh): new `sensor.meralco_generation_charge` in `mqtt` mode and a `generation_charge` field in all `/rates` responses. ([#9](https://github.com/rairulyle/meralco-ph/issues/9))
+
+### Fixed
+
+- `kwh_levels` is now a multi-select in the add-on UI. Saving it from the form no longer fails with "Invalid list for option 'kwh_levels'". Existing configs keep working. ([#8](https://github.com/rairulyle/meralco-ph/issues/8))
+
 ## [2.0.4] - 2026-06-16
 
 ### Fixed
