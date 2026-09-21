@@ -15,6 +15,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `kwh_levels` is now a multi-select in the add-on UI. Saving it from the form no longer fails with "Invalid list for option 'kwh_levels'". Existing configs keep working. ([#8](https://github.com/rairulyle/meralco-ph/issues/8))
 
+## [Unreleased]
+
+### Fixed
+
+- Rate sensor no longer declares the `monetary` device class, which conflicted with `state_class: measurement` in Home Assistant. ([#10](https://github.com/rairulyle/meralco-ph/pull/10))
+
 ## [2.0.4] - 2026-06-16
 
 ### Fixed
