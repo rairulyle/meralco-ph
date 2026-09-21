@@ -262,6 +262,7 @@ def _publish_one_cycle(bridge: MeralcoMQTTBridge, kwh_levels: list[int]) -> None
                 "trend": trend,
             }
     bridge.publish_state(by_kwh)
+    bridge.publish_generation_charge(result.get("generation_charge"))
 
 
 def main() -> None:

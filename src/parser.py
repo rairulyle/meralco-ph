@@ -55,12 +55,14 @@ class MeralcoRatesResult(TypedDict):
     error: str | None
     warning: str | None
     date: str | None
+    generation_charge: float | None
     data: list[RateEntry] | None
     meta: MeralcoRatesMeta
 
 
 class _ParsedMonth(TypedDict):
     entries: list[ParsedRate]
+    generation_charge: float | None
     billing_date: str | None
 
 
@@ -71,6 +73,27 @@ def get_pdf_url(target_date: datetime) -> str:
     return f"{PDF_BASE_URL}/{year}-{month}/{month}-{year}_residential_bills.pdf"
 
 
+NON_LIFELINE_MARKER = "For Non-Lifeline Customers"
+GENERATION_CHARGE_HEADER = "generation charge"
+
+
+def _last_non_lifeline_start(rows: list[PdfRow]) -> int | None:
+    starts = [
+        i
+        for i, row in enumerate(rows)
+        if row and (row[0] or "").strip() == NON_LIFELINE_MARKER
+    ]
+    return starts[-1] if starts else None
+
+
+def _parse_number(cell: str | None) -> float | None:
+    """Parse a PDF numeric cell, which may contain stray whitespace (e.g. '1 3.8161')."""
+    try:
+        return float((cell or "").strip().replace(" ", "").replace(",", ""))
+    except ValueError:
+        return None
+
+
 def parse_residential_bills(rows: list[PdfRow]) -> list[ParsedRate]:
     """Extract per-kWh rates from the 'For Non-Lifeline Customers' rate section.
 
@@ -79,15 +102,10 @@ def parse_residential_bills(rows: list[PdfRow]) -> list[ParsedRate]:
     The last column of each row is the final per-kWh rate, which may
     contain stray whitespace (e.g. '1 3.8161') that must be stripped.
     """
-    non_lifeline_starts = [
-        i
-        for i, row in enumerate(rows)
-        if row and (row[0] or "").strip() == "For Non-Lifeline Customers"
-    ]
-    if not non_lifeline_starts:
+    start = _last_non_lifeline_start(rows)
+    if start is None:
         return []
 
-    start = non_lifeline_starts[-1]
     result: list[ParsedRate] = []
     for row in rows[start + 1 :]:
         if not row:
@@ -95,14 +113,42 @@ def parse_residential_bills(rows: list[PdfRow]) -> list[ParsedRate]:
         first = (row[0] or "").strip()
         if not first.isdigit():
             break
-        kwh = int(first)
-        last_cell = (row[-1] or "").strip().replace(" ", "").replace(",", "")
-        try:
-            rate = float(last_cell)
-        except ValueError:
+        rate = _parse_number(row[-1])
+        if rate is None:
             continue
-        result.append({"kwh": kwh, "rate": rate})
+        result.append({"kwh": int(first), "rate": rate})
     return result
+
+
+def parse_generation_charge(rows: list[PdfRow]) -> float | None:
+    """Extract the per-kWh Generation Charge from the 'For Non-Lifeline Customers'
+    rate section. The charge is identical at every consumption level, so the
+    first numeric row is used. The column is located via the table header.
+    """
+    start = _last_non_lifeline_start(rows)
+    if start is None:
+        return None
+
+    column = next(
+        (
+            i
+            for row in rows
+            for i, cell in enumerate(row)
+            if " ".join((cell or "").split()).lower() == GENERATION_CHARGE_HEADER
+        ),
+        None,
+    )
+    if column is None:
+        return None
+
+    return next(
+        (
+            _parse_number(row[column])
+            for row in rows[start + 1 :]
+            if len(row) > column and (row[0] or "").strip().isdigit()
+        ),
+        None,
+    )
 
 
 def compute_rate_changes(
@@ -237,7 +283,11 @@ def _parse_single_month(pdf_bytes: bytes) -> _ParsedMonth | None:
                 match = MONTH_REGEX.search(page_text)
                 if match:
                     billing_date = _format_billing_date(match)
-            return {"entries": entries, "billing_date": billing_date}
+            return {
+                "entries": entries,
+                "generation_charge": parse_generation_charge(rows),
+                "billing_date": billing_date,
+            }
     except Exception as e:
         logger.error("Error parsing PDF: %s", e)
         return None
@@ -270,6 +320,7 @@ def get_meralco_rates() -> MeralcoRatesResult:
                 "error": "Could not find rate information for current or previous month",
                 "warning": None,
                 "date": None,
+                "generation_charge": None,
                 "data": None,
                 "meta": meta,
             }
@@ -298,6 +349,7 @@ def get_meralco_rates() -> MeralcoRatesResult:
         "error": None,
         "warning": warning,
         "date": current_parsed["billing_date"],
+        "generation_charge": current_parsed["generation_charge"],
         "data": entries_with_changes,
         "meta": meta,
     }

@@ -171,6 +171,7 @@ def test_main_mqtt_mode_publishes_discovery_and_state(
     # Stub the rate fetcher to return one cycle of data, then signal stop.
     rate_payload = {
         "success": True,
+        "generation_charge": 7.8607,
         "data": [
             {
                 "kwh": 200,
@@ -214,6 +215,7 @@ def test_main_mqtt_mode_publishes_discovery_and_state(
     state_arg = bridge.publish_state.call_args.args[0]
     assert state_arg[200]["rate"] == 13.8
     assert state_arg[300]["rate"] == 14.5
+    bridge.publish_generation_charge.assert_called_once_with(7.8607)
 
 
 def test_main_rest_mode_execs_gunicorn(

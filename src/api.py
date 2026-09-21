@@ -105,6 +105,7 @@ def _fetch_and_cache() -> MeralcoRatesResult:
                 "warning": cached_data["warning"]
                 or "Current rates temporarily unavailable. Using cached values.",
                 "date": cached_data["date"],
+                "generation_charge": cached_data["generation_charge"],
                 "data": cached_data["data"],
                 "meta": cached_data["meta"],
             }
@@ -129,6 +130,7 @@ class _CleanedResult(TypedDict, total=False):
     error: str
     warning: str
     date: str | None
+    generation_charge: float | None
     data: list[RateEntry] | RateEntry | None
     meta: MeralcoRatesMeta | None
 
@@ -149,6 +151,7 @@ def _clean_response(data: MeralcoRatesResult) -> _CleanedResult:
         cleaned["warning"] = warning
 
     cleaned["date"] = data.get("date")
+    cleaned["generation_charge"] = data.get("generation_charge")
     cleaned["data"] = data.get("data")
     cleaned["meta"] = data.get("meta")
     return cleaned
@@ -160,6 +163,7 @@ def _error_response(result: MeralcoRatesResult, error: str) -> _CleanedResult:
         "success": False,
         "error": error,
         "date": result.get("date"),
+        "generation_charge": result.get("generation_charge"),
         "data": None,
         "meta": result.get("meta"),
     }
@@ -189,6 +193,7 @@ def health() -> ResponseReturnValue:
 class _RatesResponse(TypedDict, total=False):
     success: bool
     date: str | None
+    generation_charge: float | None
     data: list[RateEntry] | RateEntry | None
     meta: MeralcoRatesMeta | None
     warning: str
@@ -201,6 +206,7 @@ def _build_response(
     resp: _RatesResponse = {
         "success": True,
         "date": result.get("date"),
+        "generation_charge": result.get("generation_charge"),
         "data": data,
         "meta": result.get("meta"),
     }
