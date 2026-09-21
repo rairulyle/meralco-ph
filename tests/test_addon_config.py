@@ -192,3 +192,50 @@ def test_docs_md_kwh_levels_list_matches_valid_kwh_levels() -> None:
         f"DOCS.md kwh list {sorted(listed)} does not match "
         f"VALID_KWH_LEVELS {sorted(VALID_KWH_LEVELS)}"
     )
+
+
+def test_string_kwh_levels_are_coerced_to_int(clean_env: None, tmp_path: Path) -> None:
+    """The add-on UI multi-select stores levels as strings; they load as ints."""
+    from src.addon_main import read_addon_config
+
+    options_file = tmp_path / "options.json"
+    options_file.write_text(json.dumps({"kwh_levels": ["200", 3000, "500"]}))
+
+    config = read_addon_config(options_path=options_file)
+
+    assert config["kwh_levels"] == [200, 3000, 500]
+
+
+def test_non_numeric_kwh_levels_are_dropped_with_warning(
+    clean_env: None, tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    import logging as _logging
+
+    from src.addon_main import read_addon_config
+
+    options_file = tmp_path / "options.json"
+    options_file.write_text(json.dumps({"kwh_levels": ["200", "abc", None]}))
+
+    with caplog.at_level(_logging.WARNING, logger="src.addon_main"):
+        config = read_addon_config(options_path=options_file)
+
+    assert config["kwh_levels"] == [200]
+    assert sum("Dropping invalid kwh_level" in r.message for r in caplog.records) == 2
+
+
+def test_config_yaml_kwh_levels_schema_is_a_select_of_valid_levels() -> None:
+    """An int list renders as a single number box in the add-on UI and fails to
+    save; a list(...) enum renders as a multi-select. Keep it in sync with code.
+    """
+    import re
+
+    from src.api import VALID_KWH_LEVELS
+
+    repo_root = Path(__file__).resolve().parent.parent
+    config_yaml = (repo_root / "config.yaml").read_text()
+
+    match = re.search(r'^  kwh_levels:\n    - "list\(([0-9|]+)\)"$', config_yaml, re.M)
+    assert match is not None, "config.yaml kwh_levels schema is not a list(...) enum"
+
+    listed = [int(n) for n in match.group(1).split("|")]
+    assert listed == sorted(VALID_KWH_LEVELS)
