@@ -102,7 +102,7 @@ def test_rate_sensor_discovery_payload_has_expected_fields_unsuffixed(
     assert payload["unique_id"] == "meralco_rate"
     assert payload["state_topic"] == "meralco/state"
     assert payload["unit_of_measurement"] == "PHP/kWh"
-    assert payload["device_class"] == "monetary"
+    assert "device_class" not in payload
     assert payload["state_class"] == "measurement"
     assert payload["value_template"] == "{{ value_json.rate | default(none, true) }}"
     assert payload["suggested_display_precision"] == 4

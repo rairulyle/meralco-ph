@@ -79,7 +79,7 @@ SENSOR_KINDS: list[SensorKind] = [
         "suffix": "rate",
         "name": "Rate",
         "unit": "PHP/kWh",
-        "device_class": "monetary",
+        "device_class": None,
         "state_class": "measurement",
         "icon": "mdi:flash",
         "value_template": "{{ value_json.rate | default(none, true) }}",
